@@ -1,0 +1,8 @@
+version: offline_assistant.function_calling_stub.oss.1.0.0
+nodes:
+  - type: assistant_result_stub
+    name: assistant_result_stub
+    inputs:
+      input: audio
+    outputs:
+      assistant_result: assistant_result

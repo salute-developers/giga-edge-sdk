@@ -1,0 +1,81 @@
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Subject: [PATCH] farmhash: CMake package for the TensorFlow Lite build
+
+Adds a CMake build that installs farmhash as a package for find_package.
+---
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..14afc1320a07d2d61b294f375ea09a2ff3673ebc
+--- /dev/null
++++ b/CMakeLists.txt
+@@ -0,0 +1,61 @@
++cmake_minimum_required(VERSION 3.16)
++
++project(farmhash CXX)
++
++include(GNUInstallDirs)
++
++# Transcribed from farmhash/src/Makefile.am
++include(CheckCXXSourceCompiles)
++check_cxx_source_compiles(
++  "int main(int argc, char* argv[]) { return (int)__builtin_expect(0, 0); }"
++  FARMHASH_HAS_BUILTIN_EXPECT
++)
++
++add_library(farmhash
++  src/farmhash.cc
++  src/farmhash.h
++)
++
++set_target_properties(farmhash PROPERTIES PUBLIC_HEADER "src/farmhash.h")
++target_include_directories(farmhash PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
++if(NOT FARMHASH_HAS_BUILTIN_EXPECT)
++  target_compile_definitions(farmhash PUBLIC -DFARMHASH_NO_BUILTIN_EXPECT)
++endif()
++
++install(
++  TARGETS farmhash
++  EXPORT farmhashTargets
++  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
++  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
++  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
++)
++
++install(EXPORT farmhashTargets
++  FILE farmhashTargets.cmake
++  DESTINATION lib/cmake/farmhash
++)
++
++include(CMakePackageConfigHelpers)
++
++configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
++  "${CMAKE_CURRENT_BINARY_DIR}/farmhashConfig.cmake"
++  INSTALL_DESTINATION "lib/cmake/farmhash"
++  NO_SET_AND_CHECK_MACRO
++  NO_CHECK_REQUIRED_COMPONENTS_MACRO
++)
++
++write_basic_package_version_file(
++  "${CMAKE_CURRENT_BINARY_DIR}/farmhashConfigVersion.cmake"
++  VERSION "0"
++  COMPATIBILITY AnyNewerVersion
++)
++
++install(FILES
++  ${CMAKE_CURRENT_BINARY_DIR}/farmhashConfig.cmake
++  ${CMAKE_CURRENT_BINARY_DIR}/farmhashConfigVersion.cmake
++  DESTINATION lib/cmake/farmhash
++)
++
++export(EXPORT farmhashTargets
++  FILE "${CMAKE_CURRENT_BINARY_DIR}/farmhashTargets.cmake"
++)
+diff --git a/Config.cmake.in b/Config.cmake.in
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea78ab263479ab1ff808423cdd7b89964f34de85
+--- /dev/null
++++ b/Config.cmake.in
+@@ -0,0 +1,3 @@
++@PACKAGE_INIT@
++
++include("${CMAKE_CURRENT_LIST_DIR}/farmhashTargets.cmake")

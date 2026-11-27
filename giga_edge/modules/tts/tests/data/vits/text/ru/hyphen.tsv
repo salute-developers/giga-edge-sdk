@@ -1,0 +1,22 @@
+# Parts of hyphenated words without a stress of their own. Other parts are words of their own, each with its stress.
+# prefix: the first part; suffix: any part but the first. Of one-syllable parts in a row only the last one is stressed.
+prefix	по
+prefix	во
+prefix	санкт
+suffix	то
+suffix	либо
+suffix	ка
+suffix	таки
+suffix	де
+suffix	с
+suffix	тка
+# Names of letters: a hyphenated word made of them only reads as one word stressed on its last part.
+letters	а,бэ,бе,вэ,ве,гэ,ге,дэ,де,е,ё,жэ,же,зэ,зе,и,й,ка,кэ,эль,эл,лэ,эм,мэ,эн,нэ,о,пэ,пе,эр,рэ,эс,сэ,тэ,те,у,эф,фэ,ха,хэ,цэ,це,чэ,че,ша,шэ,ща,щэ,ще,ы,э,ю,я
+letters	эй,би,си,ди,джи,эйч,ай,джей,кей,кью,ар,ти,ви,икс,уай,зэд,зет,дабл,оу,пи
+# A part before a hyphen spelled with «е» that reads with «ё» (as a word of its own it may read otherwise).
+yo	тёмно
+yo	чёрно
+yo	жёлто
+yo	зелёно
+yo	пёстро
+yo	лётно

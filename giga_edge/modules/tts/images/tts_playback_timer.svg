@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="236" viewBox="0 0 760 236" role="img" aria-labelledby="title">
+  <title id="title">The audio of a phrase comes in two ticks, the client plays it for 220 ms, and played is true in the fifth tick</title>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .back{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .pill{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .grid{stroke:#d0d7de;stroke-dasharray:3 4}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="235" rx="12"/>
+
+  <path class="grid" d="M130 34V186M230 34V186M330 34V186M430 34V186M530 34V186M630 34V186M730 34V186"/>
+  <text class="note small mid" x="180" y="30">tick 1</text>
+  <text class="note small mid" x="280" y="30">tick 2</text>
+  <text class="note small mid" x="380" y="30">tick 3</text>
+  <text class="note small mid" x="480" y="30">tick 4</text>
+  <text class="note small mid" x="580" y="30">tick 5</text>
+  <text class="note small mid" x="680" y="30">tick 6</text>
+
+  <text class="mono" x="20" y="66" style="font-size:12px">audio</text>
+  <rect class="node" x="136" y="48" width="88" height="28" rx="6"/>
+  <text class="mid" x="180" y="67" style="font-size:12px">120 ms</text>
+  <rect class="node" x="236" y="48" width="88" height="28" rx="6"/>
+  <text class="mid" x="280" y="67" style="font-size:12px">100 ms, last</text>
+
+  <text x="20" y="116" style="font-size:12px">the client plays</text>
+  <rect class="back" x="130" y="98" width="440" height="28" rx="6"/>
+  <text class="mid" x="350" y="117" style="font-size:12px">220 ms in real time, 50 ms a tick</text>
+
+  <text class="mono" x="20" y="166" style="font-size:12px">played</text>
+  <rect class="pill" x="536" y="148" width="88" height="28" rx="14"/>
+  <text class="mono mid" x="580" y="167" style="font-size:12px">true</text>
+
+  <text class="note mid" x="380" y="212">The node adds up the length of the audio it is given and takes one tick of it away every tick.</text>
+</svg>

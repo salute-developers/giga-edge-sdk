@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="162" viewBox="0 0 760 162" role="img" aria-labelledby="title">
+  <title id="title">A config loads when its lib_version has the major version of the SDK and a minor version not above the SDK's</title>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .ok{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .sdk{fill:#dafbe1;stroke:#1a7f37;stroke-width:3}
+    .no{fill:#ffebe9;stroke:#cf222e;stroke-width:1.5}
+    .green{fill:#1a7f37}
+    .red{fill:#cf222e}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="161" rx="12"/>
+
+  <text class="note mid" x="380" y="34">lib_version of a config, checked by an SDK whose own version is 1.35</text>
+
+  <rect class="no" x="60" y="62" width="70" height="30" rx="15"/>
+  <text class="mono b mid red" x="95" y="82">0.9</text>
+  <rect class="ok" x="190" y="62" width="70" height="30" rx="15"/>
+  <text class="mono b mid green" x="225" y="82">1.0</text>
+  <rect class="ok" x="270" y="62" width="70" height="30" rx="15"/>
+  <text class="mono b mid green" x="305" y="82">1.20</text>
+  <rect class="sdk" x="350" y="62" width="70" height="30" rx="15"/>
+  <text class="mono b mid green" x="385" y="82">1.35</text>
+  <rect class="no" x="480" y="62" width="70" height="30" rx="15"/>
+  <text class="mono b mid red" x="515" y="82">1.36</text>
+  <rect class="no" x="610" y="62" width="70" height="30" rx="15"/>
+  <text class="mono b mid red" x="645" y="82">2.0</text>
+  <text class="note small mid" x="385" y="54">the SDK</text>
+  <path class="line" d="M60 100V106H130V100"/>
+  <text class="note small mid" x="95" y="124">another major version</text>
+  <text class="small b mid red" x="95" y="140">does not load</text>
+  <path class="line" d="M190 100V106H420V100"/>
+  <text class="note small mid" x="305" y="124">the same major, the minor not above the SDK's</text>
+  <text class="small b mid green" x="305" y="140">loads</text>
+  <path class="line" d="M480 100V106H550V100"/>
+  <text class="note small mid" x="515" y="124">a newer minor</text>
+  <text class="small b mid red" x="515" y="140">does not load</text>
+  <path class="line" d="M610 100V106H680V100"/>
+  <text class="note small mid" x="645" y="124">another major version</text>
+  <text class="small b mid red" x="645" y="140">does not load</text>
+</svg>

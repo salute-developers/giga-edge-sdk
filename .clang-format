@@ -1,0 +1,138 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+
+# Line width
+ColumnLimit: 120
+
+# Indentation: 2-space everywhere; access specifiers flush-left in the class body
+AccessModifierOffset: -2
+ContinuationIndentWidth: 2
+ConstructorInitializerIndentWidth: 2
+
+# Call/decl wrapping: ')' on its own line; never push the return type onto its own line.
+# Args/params that don't fit go all on one wrapped line if they fit there, else one per
+# line. Keeping args on the wrapped line (rather than one-per-line) makes that wrapping
+# cheaper than splitting the assignment at '=', so 'lhs = Call(' stays together.
+AlignAfterOpenBracket: BlockIndent
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+PenaltyReturnTypeOnItsOwnLine: 1000000
+AlignOperands: DontAlign
+# Operators (incl. '=') lead the wrapped line. Keeps '.field = Struct{' together for
+# multi-line designated initializers.
+BreakBeforeBinaryOperators: All
+# Prefer breaking inside the RHS (call parens via BlockIndent, operators/ternary at the
+# 2-space continuation) over splitting an assignment at '='. The '=' split survives only
+# as a last resort where the RHS has no cheap break point (wide arg fan-outs, braced
+# inits, R"pb(" literals, trailing .method() chains). Calibration: 200+ mangles trailing
+# .count()-style chains, 300+ splits a declaration between type and name.
+PenaltyBreakAssignment: 100
+# Charge each column of continuation whitespace: rules out deeply aligned wrappings
+# (ternary branches aligned under '?', lambda params aligned to the call's '(') in
+# favor of shallow 2-space continuations.
+PenaltyIndentedWhitespace: 1
+
+# Constructor initializers: each on its own line, leading comma
+PackConstructorInitializers: Never
+BreakConstructorInitializers: BeforeComma
+
+# Pointers/references bind to the type: 'T* x', 'T& x'
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+# Short constructs: never collapse a function or lambda body (except empty {}) onto
+# one line. For lambdas this also stops long assignments from breaking at '=' just to
+# fit a crammed one-line lambda on the continuation line.
+# Short enums collapse to one line if they fit; put a trailing comma after the last
+# enumerator to keep the expanded one-per-line form (author's choice per enum).
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortLambdasOnASingleLine: Empty
+AllowShortEnumsOnASingleLine: true
+
+# Always brace control-statement bodies: 'if (c) return;' -> 'if (c) {\n  return;\n}'.
+# Applies to if/else/for/while. Inserted only by 'clang-format -i'; the --dry-run -Werror
+# CI gate reports a bodyless statement as a violation. Caveat (per clang-format docs): this
+# is lexer-based, not a full parser, so review -i changes around macro/preprocessor-split
+# bodies; in practice it leaves such ambiguous cases untouched rather than mangling them.
+InsertBraces: true
+
+# Templates: 'template<...>' with no space
+SpaceAfterTemplateKeyword: false
+
+# Comments
+SpacesBeforeTrailingComments: 1
+ReflowComments: false
+
+# Blank lines
+KeepEmptyLinesAtTheStartOfBlocks: true
+EmptyLineBeforeAccessModifier: Leave
+
+# Includes: regroup into 5 blocks, sorted case-sensitively within each:
+#   1) main header (the .cpp's own .h, matched automatically)
+#   2) same-directory local headers ("foo.h", no path)
+#   3) project headers: canonical giga_edge/... paths, plus any other quoted path
+#      include (module-relative "nodes/.../node.h", client include roots,
+#      tests' "*_test_utils/...")
+#   4) third-party libraries   5) C/C++ standard and system headers
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # same-directory local headers: quoted, no slash ("params.h", "cli_args.h")
+  - Regex: '^"[^/]+"'
+    Priority: 1
+    CaseSensitive: true
+  # third-party, listed: libraries also included quoted or without a directory (<Iir.h>, "onnx/…")
+  - Regex: '^[<"](json|yaml-cpp|catch2?|flatbuffers|onnxruntime|onnx|tensorflow|llama|ncnn|kissfft|Iir|asr_features|cxxopts)[/.]'
+    Priority: 3
+    CaseSensitive: true
+  # project: canonical giga_edge/ include paths (quoted or <>)
+  - Regex: '^[<"]giga_edge/'
+    Priority: 2
+    CaseSensitive: true
+  # system C APIs with a directory; add new ones here, else they sort as third-party below
+  - Regex: '^<(sys|arpa|netinet|mach-o|pthread|AudioToolbox)/'
+    Priority: 4
+    CaseSensitive: true
+  # third-party: any other angled include with a directory
+  - Regex: '^<[^/>]+/'
+    Priority: 3
+    CaseSensitive: true
+  # project: every other quoted include with a path — module-relative sources,
+  # client include roots, test-util libs (third-party prefixes are caught above)
+  - Regex: '^"'
+    Priority: 2
+  # C/C++ standard library, POSIX/system headers without a directory
+  - Regex: '.*'
+    Priority: 4
+
+# Escaped newlines (macros) flush right
+AlignEscapedNewlines: Right
+
+# Raw-string content is never reformatted. The Google preset registers TextProto/C++
+# formatting for R"pb(...)" / R"cc(...)" literals; on spliced literals (fragments
+# interleaved with runtime values via operator+, common in tests) that reformatter
+# injects whitespace INSIDE quoted values — corrupting the data — and never converges.
+# YAML config cannot shrink the inherited list (entries merge element-wise by index),
+# so every inherited delimiter/function slot is overridden with an unmatchable token.
+# On a clang-format upgrade re-verify with --dump-config that no real delimiter leaks
+# back in (a leak is loud: spliced literals make the dry-run gate fail permanently).
+RawStringFormats:
+  - Language: TextProto
+    Delimiters: [unused-a1, unused-a2, unused-a3, unused-a4, unused-a5, unused-a6, unused-a7]
+    CanonicalDelimiter: ''
+  - Language: TextProto
+    Delimiters: [unused-b1, unused-b2, unused-b3, unused-b4]
+    EnclosingFunctions: [unused-f1, unused-f2, unused-f3, unused-f4, unused-f5, unused-f6, unused-f7, unused-f8, unused-f9]
+    CanonicalDelimiter: ''
+---
+# Objective-C[++] (the CoreML backend: trampoline.h + *.mm) is deliberately left
+# unformatted. Without this section clang-format hard-errors on ObjC-detected
+# files ("Configuration file(s) do(es) not support Objective-C") instead of
+# skipping them.
+Language: ObjC
+DisableFormat: true
+SortIncludes: Never
+...

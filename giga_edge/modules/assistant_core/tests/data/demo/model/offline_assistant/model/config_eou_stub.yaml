@@ -1,0 +1,22 @@
+version: offline_assistant.eou_stub.oss.1.0.0
+nodes:
+  - type: vec_float_stub
+    name: vec_float_stub
+    inputs:
+      input: audio
+    outputs:
+      vec_float: empty_vector
+
+  - type: to_bool
+    name: to_bool
+    inputs:
+      float_vector: empty_vector
+    outputs:
+      output: is_eou
+
+  - type: to_bool
+    name: to_bool_speech
+    inputs:
+      float_vector: empty_vector
+    outputs:
+      output: is_speech

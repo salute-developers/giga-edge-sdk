@@ -1,0 +1,17 @@
+tensorflow/lite: find_dependency for farmhash and fft2d in tensorflow-liteConfig.cmake.
+
+tensorflow-lite links the farmhash and fft2d_fftsg2d targets PUBLIC, but the installed
+tensorflow-liteConfig.cmake does not look for their packages, and linking fails with
+"cannot find -lfarmhash / -lfft2d_fftsg2d". Not fixed upstream in TF 2.20.
+
+--- a/tensorflow/lite/tools/cmake/tensorflow-liteConfig.cmake.in
++++ b/tensorflow/lite/tools/cmake/tensorflow-liteConfig.cmake.in
+@@ -22,6 +22,8 @@
+ find_dependency(cpuinfo)
+ find_dependency(ruy)
+ find_dependency(gemmlowp)
++find_dependency(farmhash)
++find_dependency(fft2d)
+ 
+ @PACKAGE_INIT@
+ 

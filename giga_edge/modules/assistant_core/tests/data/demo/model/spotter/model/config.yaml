@@ -1,0 +1,125 @@
+# The wake word of the demo: «Гига Ёж», «Гига Ёжик», «Ёж» or «Ёжик», one event `wake` for all four.
+# The input audio is 16000 Hz mono and comes in chunks of 50 ms: 16000 * 0.050 = 800 samples a chunk. A chunk is
+# one tick of the graph, and the timer that suppresses repeats is counted in chunks.
+# INPUTS: audio (vector<float>, one chunk).
+# OUTPUTS: hotword_events (vector<SpotterEvent>): an activation for a spoken word, subactivations for its repeats.
+version: spotter.gigaezh.1.0.0
+lib_version: 1.21
+
+nodes:
+  - type: features
+    name: features
+    inputs:
+      audio: audio
+    outputs:
+      features: features
+    params:
+      features_type: asr
+      dither_val: 1e-8
+      frame_size_ms: 20
+      frame_stride_ms: 10
+      high_freq_filterbank: 8000
+      low_freq_filterbank: 0
+      normalize_features_across_axis_0: false
+      normalize_gain: false
+      num_filterbank_chans: 64
+      preem_coef: 0.97
+      sampling_freq: 16000
+      use_energy: false
+      raw_energy: false
+      use_power: false
+      wav_scaling: false
+      window_type: hanning
+      zero_mean_frame: false
+
+  - type: feature_iterator
+    name: feature_iterator
+    inputs:
+      features: features
+    outputs:
+      features_batch: features_batch
+    params:
+      num_mels: 64
+      step_size: 8
+      context_width: 8
+
+  - type: model
+    name: wake_word_model
+    inputs:
+      input: features_batch
+    outputs:
+      predictions: predictions
+    params:
+      path: hotword.tflite
+      interpreter:
+        type: tflite
+      inputs_count: 1
+
+  - type: event_generator
+    name: event_generator
+    inputs:
+      predictions: predictions
+    outputs:
+      events: events_batch
+    params:
+      activation_mode: all
+      model_name: spotter.gigaezh.demo.1.0.0
+      ignore_synthesis_text: true
+      classes:
+        - hotword: wake
+          ru_hotword: обращение
+          hotword_group: main
+          threshold: 0.518
+          sub_threshold: 0.518
+          hotword_length_ms: 1300
+        - hotword: background
+          threshold: 2.0
+          sub_threshold: 2.0
+          hotword_length_ms: 0
+
+  - type: batch_gather_events
+    name: gather_events
+    inputs:
+      input: events_batch
+    outputs:
+      output: events
+
+  # The model reports one spoken word in several ticks. Only the first activation of such a burst passes, the rest
+  # become subactivations. Every activation, a suppressed one too, restarts wake_quiet_timer (a window counted from
+  # the first event would end while the model still reports a long word), so the next activation passes 14 ticks
+  # (700 ms) after the last one. The largest gap measured inside a burst is two ticks.
+  - name: raw_wake
+    type: has_activation
+    inputs:
+      events: events
+    outputs:
+      output: raw_wake
+
+  - name: wake_quiet_timer
+    type: timer
+    inputs:
+      start: raw_wake
+    outputs:
+      alarm: wake_recent
+    params:
+      timer: 12
+      continuous_alarm: true
+      restart_strategy: restart
+
+  - name: wake_recent_before
+    type: to_recursive_output_bool
+    inputs:
+      input: wake_recent
+    outputs:
+      output: wake_recent_before
+
+  - name: suppress_wake_burst
+    type: change_event_type
+    inputs:
+      input_events: events
+      flag: wake_recent_before
+    outputs:
+      events: hotword_events
+    params:
+      input_event_type: activation
+      output_event_type: subactivation

@@ -1,0 +1,43 @@
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Subject: [PATCH] libarchive: do not use android_lf.h
+
+The Android large file header is not needed by the SDK builds.
+---
+diff --git a/libarchive/archive.h b/libarchive/archive.h
+index fbc96bfe76ddd6d2e8a67f4fa1860313b2a050a5..910e69ad9a2493c66e5021fca7c9caf5d86a02e6 100644
+--- a/libarchive/archive.h
++++ b/libarchive/archive.h
+@@ -96,10 +96,10 @@ typedef ssize_t la_ssize_t;
+ # endif
+ #endif
+ 
+-/* Large file support for Android */
+-#ifdef __ANDROID__
+-#include "android_lf.h"
+-#endif
++///* Large file support for Android */
++//#ifdef __ANDROID__
++//#include "android_lf.h"
++//#endif
+ 
+ /*
+  * On Windows, define LIBARCHIVE_STATIC if you're building or using a
+diff --git a/libarchive/archive_entry.h b/libarchive/archive_entry.h
+index 4cb7db36d5a1ec94d4c9c765b5d484f0a18de27c..06ae5aee8c3eb723f9febebd51a601169aaf9270 100644
+--- a/libarchive/archive_entry.h
++++ b/libarchive/archive_entry.h
+@@ -98,10 +98,10 @@ typedef ssize_t la_ssize_t;
+ # define	__LA_MODE_T	mode_t
+ #endif
+ 
+-/* Large file support for Android */
+-#ifdef __ANDROID__
+-#include "android_lf.h"
+-#endif
++///* Large file support for Android */
++//#ifdef __ANDROID__
++//#include "android_lf.h"
++//#endif
+ 
+ /*
+  * On Windows, define LIBARCHIVE_STATIC if you're building or using a

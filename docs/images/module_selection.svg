@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="290" viewBox="0 0 760 290" role="img" aria-labelledby="title">
+  <title id="title">A selected module and the modules it depends on are built in full, every other module becomes a stub</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .stub{fill:#f6f8fa;stroke:#afb8c1;stroke-dasharray:5 4}
+    .tagon{fill:#0969da}
+    .tagoff{fill:#fff;stroke:#afb8c1}
+    .white{fill:#fff}
+    .muted{fill:#8c959f}
+    .dir{fill:#ddf4ff;stroke:#0969da}
+    .dirs{fill:#fff;stroke:#afb8c1}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="289" rx="12"/>
+
+  <rect class="chip" x="24" y="20" width="712" height="28" rx="8"/>
+  <text class="mono small" x="38" y="39">cmake -S . -B build -DMODULES="llm"</text>
+
+  <rect class="card" x="25" y="66" width="226" height="130" rx="10"/>
+  <text class="mono b" x="39" y="90">llm</text>
+  <rect class="tagon" x="153" y="76" width="84" height="20" rx="10"/>
+  <text class="small mid white" x="195" y="90">selected</text>
+  <text class="note small" x="39" y="116">compiled:</text>
+  <rect class="dir" x="39" y="124" width="70" height="22" rx="6"/>
+  <text class="mono small mid" x="74" y="139">include/</text>
+  <rect class="dir" x="115" y="124" width="76" height="22" rx="6"/>
+  <text class="mono small mid" x="153" y="139">internal/</text>
+  <rect class="dir" x="197" y="124" width="43" height="22" rx="6"/>
+  <text class="mono small mid" x="218.5" y="139">src/</text>
+  <text class="note small" x="39" y="174">its nodes are in the build</text>
+
+  <rect class="card" x="267" y="66" width="226" height="130" rx="10"/>
+  <text class="mono b" x="281" y="90">assistant_core</text>
+  <rect class="tagon" x="395" y="76" width="84" height="20" rx="10"/>
+  <text class="small mid white" x="437" y="90">by DEPENDS</text>
+  <text class="note small" x="281" y="116">compiled:</text>
+  <rect class="dir" x="281" y="124" width="70" height="22" rx="6"/>
+  <text class="mono small mid" x="316" y="139">include/</text>
+  <rect class="dir" x="357" y="124" width="76" height="22" rx="6"/>
+  <text class="mono small mid" x="395" y="139">internal/</text>
+  <rect class="dir" x="439" y="124" width="43" height="22" rx="6"/>
+  <text class="mono small mid" x="460.5" y="139">src/</text>
+  <text class="note small" x="281" y="174">its nodes are in the build</text>
+
+  <rect class="stub" x="509" y="66" width="226" height="130" rx="10"/>
+  <text class="mono b muted" x="523" y="90">mcp</text>
+  <rect class="tagoff" x="637" y="76" width="84" height="20" rx="10"/>
+  <text class="small mid muted" x="679" y="90">a stub</text>
+  <text class="note small" x="523" y="116">compiled:</text>
+  <rect class="dirs" x="523" y="124" width="70" height="22" rx="6"/>
+  <text class="mono small mid" x="558" y="139">include/</text>
+  <rect class="dirs" x="599" y="124" width="50" height="22" rx="6"/>
+  <text class="mono small mid" x="624" y="139">stub/</text>
+  <text class="note small" x="523" y="174">nodes.h is empty: no nodes</text>
+
+  <path class="edge" d="M251 131H265"/>
+  <path class="line" d="M138 196V222H622V196M380 196V222"/>
+  <path class="edge" d="M380 222V238"/>
+  <rect class="card" x="300" y="240" width="160" height="30" rx="8"/>
+  <text class="mono b mid" x="380" y="260">giga_edge_runtime</text>
+</svg>

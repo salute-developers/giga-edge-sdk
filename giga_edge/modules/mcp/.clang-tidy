@@ -1,0 +1,6 @@
+---
+# mcp/ method names (callTool, listResources, notifyInitialized, ...) deliberately mirror
+# the MCP / JSON-RPC protocol. Keep all bug/perf/etc. checks; drop naming enforcement only.
+InheritParentConfig: true
+Checks: '-readability-identifier-naming'
+...

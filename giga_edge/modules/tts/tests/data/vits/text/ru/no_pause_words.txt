@@ -1,0 +1,10 @@
+# Phrases next to which a comma gives no pause: the pause is dropped at a comma right before the phrase or right
+# after it. A comma after the first word of a reply keeps its pause, after «ок», «да», «нет» too.
+хорошо
+конечно
+к сожалению
+например
+кстати
+пожалуйста
+так
+однако

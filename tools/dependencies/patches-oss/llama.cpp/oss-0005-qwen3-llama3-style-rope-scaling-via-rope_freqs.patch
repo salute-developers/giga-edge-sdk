@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 05/12] qwen3: llama3-style rope scaling via rope_freqs
+
+A checkpoint may declare rope_scaling {rope_type: llama3, factor,
+original_max_position_embeddings}. The converter noted the type as 'handled
+in generate_extra_tensors' but only LlamaModel implemented it, so Qwen3
+exports silently dropped the factors; the runtime never loaded rope_freqs
+for qwen3 either. The converter now emits the per-dim factor tensor, and the
+model loads it (optional) and passes it to rope. Files without the tensor
+behave exactly as before.
+---
+ conversion/qwen.py   | 34 ++++++++++++++++++++++++++++++++++
+ src/models/qwen3.cpp | 12 ++++++++++--
+ 2 files changed, 44 insertions(+), 2 deletions(-)
+
+diff --git a/conversion/qwen.py b/conversion/qwen.py
+index 35fb1798073714e8ecaf1ba44d701664d591da11..9ba5c25908f4ddbf24d186ec880e7cb8cce153f7 100644
+--- a/conversion/qwen.py
++++ b/conversion/qwen.py
+@@ -237,6 +237,40 @@ class Qwen3Model(Qwen2Model):
+                             "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+             }])
+ 
++    def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
++        # Llama-3-style rope scaling (e.g. factor 64 over 4096 positions). The base
++        # class only notes it as "handled in generate_extra_tensors"; without this the factors
++        # were silently dropped and the model ran on unscaled frequencies.
++        if rope_params := self.rope_parameters.get("full_attention", self.rope_parameters):
++            if rope_params.get("rope_type", '').lower() == "llama3":
++                import math
++                base = rope_params.get("rope_theta", 10000.0)
++                if (dim := self.hparams.get("head_dim")) is None:
++                    dim = self.hparams["hidden_size"] // self.hparams["num_attention_heads"]
++                freqs = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
++
++                factor = rope_params.get("factor", 8.0)
++                low_freq_factor = rope_params.get("low_freq_factor", 1.0)
++                high_freq_factor = rope_params.get("high_freq_factor", 4.0)
++                old_context_len = rope_params.get("original_max_position_embeddings", 8192)
++
++                low_freq_wavelen = old_context_len / low_freq_factor
++                high_freq_wavelen = old_context_len / high_freq_factor
++
++                rope_factors = []
++                for freq in freqs:
++                    wavelen = 2 * math.pi / freq
++                    if wavelen < high_freq_wavelen:
++                        rope_factors.append(1)
++                    elif wavelen > low_freq_wavelen:
++                        rope_factors.append(factor)
++                    else:
++                        smooth = (old_context_len / wavelen - low_freq_factor) / (high_freq_factor - low_freq_factor)
++                        rope_factors.append(1 / ((1 - smooth) / factor + smooth))
++
++                logger.info(f"gguf: llama3 rope factors -> rope_freqs ({sum(1 for f in rope_factors if f != 1)} of {len(rope_factors)} dims scaled)")
++                yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FREQS), torch.tensor(rope_factors, dtype=torch.float32))
++
+     def _get_cls_out_tensor(self, data_torch: Tensor) -> Tensor:
+         # extract "yes" and "no" tokens from the output lm_head tensor
+         false_row = data_torch[self.token_false_id]
+diff --git a/src/models/qwen3.cpp b/src/models/qwen3.cpp
+index 2c4b984e7361727c18408a191f50b6173f192740..17880fb8371e8b78ce22f398ef2d00508360ccf1 100644
+--- a/src/models/qwen3.cpp
++++ b/src/models/qwen3.cpp
+@@ -56,6 +56,11 @@ void llama_model_qwen3::load_arch_tensors(llama_model_loader &) {
+         layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff}, 0);
+         layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
+         layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
++
++        // Llama-3-style RoPE scaling (e.g. factor 64 over 4096) comes as a per-dim
++        // frequency-factor tensor, the same way the llama arch carries it. Optional: plain Qwen3
++        // files have no such tensor and keep running with the bare frequencies.
++        layer.rope_freqs = create_tensor(tn(LLM_TENSOR_ROPE_FREQS, "weight", i), {n_rot/2}, TENSOR_NOT_REQUIRED | (i != 0 ? TENSOR_DUPLICATED : 0));
+     }
+ }
+ 
+@@ -105,8 +110,11 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
+             Qcur = build_norm(Qcur, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, il);
+             cb(Qcur, "Qcur_normed", il);
+ 
++            // per-dim frequency factors (llama3 rope scaling); nullptr when the file has none
++            ggml_tensor * rope_factors = model.get_rope_factors(cparams, il);
++
+             Qcur = ggml_rope_ext(
+-                    ctx0, Qcur, inp_pos, nullptr,
++                    ctx0, Qcur, inp_pos, rope_factors,
+                     n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                     ext_factor, attn_factor, beta_fast, beta_slow
+                     );
+@@ -115,7 +123,7 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
+             cb(Kcur, "Kcur_normed", il);
+ 
+             Kcur = ggml_rope_ext(
+-                    ctx0, Kcur, inp_pos, nullptr,
++                    ctx0, Kcur, inp_pos, rope_factors,
+                     n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                     ext_factor, attn_factor, beta_fast, beta_slow
+                     );

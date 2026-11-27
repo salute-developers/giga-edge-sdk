@@ -1,0 +1,16 @@
+#pragma once
+
+#include "giga_edge/modules/assistant_core/nodes/assistant_result_relay/node.h"
+#include "giga_edge/modules/assistant_core/nodes/assistant_result_stub/node.h"
+#include "giga_edge/modules/assistant_core/nodes/assistant_result_to_text/node.h"
+#include "giga_edge/modules/assistant_core/nodes/assistant_session/node.h"
+#include "giga_edge/modules/assistant_core/nodes/dialogue_request_builder/node.h"
+#include "giga_edge/modules/assistant_core/nodes/dialogue_state_update/node.h"
+#include "giga_edge/modules/assistant_core/nodes/request_gate/node.h"
+#include "giga_edge/modules/assistant_core/nodes/scene_snapshot_from_text/node.h"
+#include "giga_edge/modules/assistant_core/nodes/stream_merge/node.h"
+#include "giga_edge/modules/assistant_core/nodes/stream_to_assistant_result/node.h"
+#include "giga_edge/modules/assistant_core/nodes/stream_to_sentences/node.h"
+#include "giga_edge/modules/assistant_core/nodes/tool_loop_guard/node.h"
+#include "giga_edge/modules/assistant_core/nodes/tool_specs_from_json/node.h"
+#include "giga_edge/modules/assistant_core/nodes/user_query_from_text/node.h"

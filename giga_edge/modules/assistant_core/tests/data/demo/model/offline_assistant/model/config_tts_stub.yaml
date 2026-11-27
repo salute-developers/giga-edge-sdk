@@ -1,0 +1,21 @@
+# The tts slot of the core without the part tts: every phrase ends at once and without sound (the demo only prints
+# the replies). Inputs and outputs are those of tts/config.yaml of the demo; the voice is not used.
+version: offline_assistant.tts_stub.oss.1.0.0
+lib_version: 1.32
+
+nodes:
+  - name: tts_stub
+    type: tts_output_stub
+    inputs:
+      text: text
+    outputs:
+      audio_chunk: audio_chunk
+      is_eos: is_eos
+
+  - name: tts_audio_accumulator
+    type: tts_audio_accumulator
+    inputs:
+      audio_chunk: audio_chunk
+      is_eos: is_eos
+    outputs:
+      audio: audio

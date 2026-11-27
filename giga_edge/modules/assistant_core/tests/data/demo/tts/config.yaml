@@ -1,0 +1,53 @@
+# Speech synthesis of the replies: the vits backend over the models (models/) and the Russian text data (text/ru/) of
+# this part. The part comes from Hugging Face (README.md of the demo); a model without it takes the stub version
+# offline_assistant.tts_stub in the core, and the demo only prints the replies.
+#
+# INPUTS:
+#   text    string, a phrase to speak; an empty string means none.
+#   voice   string, the voice of the next phrases (a key of voices); an empty string means the key `voice`.
+#
+# OUTPUTS:
+#   audio   SynthesizedAudio, the phrase as a stream with a 400 ms lead-in; sample_rate is that of the voice.
+#   is_eos  bool, the phrase is synthesized.
+version: tts.oss.1.0.0
+lib_version: 1.32
+
+model_environments:
+  tts_pool:
+    type: thread_pool
+    thread_pool:
+      threads_count: 1
+
+nodes:
+  # The synthesis runs in its own thread: the graph ticks on while a sentence is synthesized.
+  - name: tts
+    type: tts_streaming_audio_output
+    inputs:
+      text: text
+      voice: voice
+    outputs:
+      audio_chunk: audio_chunk
+      is_eos: is_eos
+    params:
+      backend_type: vits
+      inference_strategy:
+        type: wait_till_inferring
+        thread_pool_name: tts_pool
+      tts_interpreter_params:
+        models_path: models
+        text_path: text/ru
+        threads: 2
+        voice: voice_2
+        voices: {voice_1: 0, voice_2: 1}   # rows of the table of speakers: 0 is a female voice, 1 a male one
+
+  - name: tts_audio_accumulator
+    type: tts_audio_accumulator
+    inputs:
+      audio_chunk: audio_chunk
+      is_eos: is_eos
+    outputs:
+      audio: audio
+    params:
+      stream: true
+      min_lead_ms: 400
+      sample_rate: 24000

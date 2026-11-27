@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="236" viewBox="0 0 760 236" role="img" aria-labelledby="title">
+  <title id="title">tts_streaming_audio_output turns a text into audio chunks with a backend; tts_audio_accumulator collects the chunks into the audio for the player</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .port{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .sep{stroke:#0969da;stroke-opacity:.35}
+    .back{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .purple{fill:#8250df}
+    .pill{fill:#f6f8fa;stroke:#8c959f}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .opt{fill:none;stroke:#59636e;stroke-width:1.5;stroke-dasharray:5 4;marker-end:url(#a)}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="235" rx="12"/>
+
+  <rect class="node" x="128" y="36" width="250" height="140" rx="10"/>
+  <text class="mono b mid" x="253" y="61" style="font-size:12px">tts_streaming_audio_output</text>
+  <line class="sep" x1="128" y1="74" x2="378" y2="74"/>
+  <rect class="back" x="158" y="96" width="190" height="50" rx="8"/>
+  <text class="b mid purple" x="253" y="117" style="font-size:12px">backend</text>
+  <text class="mono mid" x="253" y="135" style="font-size:11px">backend_type</text>
+
+  <path class="edge" d="M24 98H120"/>
+  <text class="mono mid" x="72" y="90">text</text>
+  <circle class="port" cx="128" cy="98" r="5"/>
+  <path class="opt" d="M24 128H120"/>
+  <text class="mono mid" x="72" y="120">cancel</text>
+  <circle class="port" cx="128" cy="128" r="5"/>
+  <path class="opt" d="M24 158H120"/>
+  <text class="mono mid" x="72" y="150">voice</text>
+  <circle class="port" cx="128" cy="158" r="5"/>
+
+  <circle class="port" cx="378" cy="104" r="5"/>
+  <path class="edge" d="M384 104H490"/>
+  <text class="mono mid" x="437" y="96" style="font-size:12px">audio_chunk</text>
+  <circle class="port" cx="378" cy="148" r="5"/>
+  <path class="edge" d="M384 148H490"/>
+  <text class="mono mid" x="437" y="140" style="font-size:12px">is_eos</text>
+
+  <rect class="node" x="498" y="36" width="190" height="140" rx="10"/>
+  <text class="mono b mid" x="593" y="61" style="font-size:12px">tts_audio_accumulator</text>
+  <line class="sep" x1="498" y1="74" x2="688" y2="74"/>
+  <text class="note small mid" x="593" y="118">the whole phrase</text>
+  <text class="note small mid" x="593" y="134">or a stream with a lead-in</text>
+  <circle class="port" cx="498" cy="104" r="5"/>
+  <circle class="port" cx="498" cy="148" r="5"/>
+
+  <circle class="port" cx="688" cy="126" r="5"/>
+  <path class="edge" d="M694 126H740"/>
+  <text class="mono mid" x="717" y="118" style="font-size:12px">audio</text>
+
+  <text class="note mid" x="380" y="204">The backend makes the audio of a phrase piece by piece; the accumulator shapes it for the player.</text>
+  <text class="note small mid" x="380" y="222">Dashed inputs are optional.</text>
+</svg>

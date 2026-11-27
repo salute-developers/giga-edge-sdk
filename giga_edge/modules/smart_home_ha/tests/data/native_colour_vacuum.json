@@ -1,0 +1,1250 @@
+{
+  "version": "2026.11.2",
+  "tools": [
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Provides real-time information about the CURRENT state, value, or mode of devices, sensors, entities, or areas. Use this tool for: 1. Answering questions about current conditions (e.g., 'Is the light on?'). 2. As the first step in conditional actions (e.g., 'If the weather is rainy, turn off sprinklers' requires checking the weather first). You may filter for devices by name, domain, and area, including combining those filters. Prefer filtering by domain when searching for multiple devices of the same type.",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Filter entities by name or alias (case-insensitive)."
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Filter entities by domain (e.g. 'light', 'sensor'). Accepts a single domain or a list."
+          },
+          "area": {
+            "type": "string",
+            "description": "Filter entities by area name or alias (case-insensitive)."
+          }
+        },
+        "type": "object"
+      },
+      "name": "homeassistant__GetLiveContext",
+      "title": "Get live context"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Turns on/opens/presses a device or entity. For locks, this performs a 'lock' action. Use for requests like 'turn on', 'activate', 'enable', or 'lock'.",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "identify",
+                "restart",
+                "update",
+                "awning",
+                "blind",
+                "curtain",
+                "damper",
+                "door",
+                "garage",
+                "gate",
+                "shade",
+                "shutter",
+                "window",
+                "tv",
+                "speaker",
+                "receiver",
+                "projector",
+                "outlet",
+                "switch",
+                "water",
+                "gas"
+              ]
+            }
+          }
+        },
+        "type": "object"
+      },
+      "name": "intent__HassTurnOn",
+      "title": "Turn on"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Turns off/closes a device or entity. For locks, this performs an 'unlock' action. Use for requests like 'turn off', 'deactivate', 'disable', or 'unlock'.",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "device_class": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "identify",
+                "restart",
+                "update",
+                "awning",
+                "blind",
+                "curtain",
+                "damper",
+                "door",
+                "garage",
+                "gate",
+                "shade",
+                "shutter",
+                "window",
+                "tv",
+                "speaker",
+                "receiver",
+                "projector",
+                "outlet",
+                "switch",
+                "water",
+                "gas"
+              ]
+            }
+          }
+        },
+        "type": "object"
+      },
+      "name": "intent__HassTurnOff",
+      "title": "Turn off"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Sets the brightness percentage or color of a light",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "light"
+              ]
+            }
+          },
+          "color": {
+            "type": "string"
+          },
+          "temperature": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "brightness": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "The brightness percentage of the light between 0 and 100, where 0 is off and 100 is fully lit"
+          }
+        },
+        "type": "object"
+      },
+      "name": "light__HassLightSet",
+      "title": "Set light"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Starts a vacuum",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "vacuum"
+              ]
+            }
+          }
+        },
+        "type": "object"
+      },
+      "name": "vacuum__HassVacuumStart",
+      "title": "Start vacuum"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Returns a vacuum to base",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "floor": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "vacuum"
+              ]
+            }
+          }
+        },
+        "type": "object"
+      },
+      "name": "vacuum__HassVacuumReturnToBase",
+      "title": "Return vacuum to base"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Tells a vacuum to clean a specific area",
+      "inputSchema": {
+        "properties": {
+          "area": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "area"
+        ],
+        "type": "object"
+      },
+      "name": "vacuum__HassVacuumCleanArea",
+      "title": "Clean area"
+    }
+  ],
+  "context": {
+    "mimeType": "text/plain",
+    "text": "Live Context: An overview of the areas and the devices in this smart home:\n- names: Белая лампа\n  domain: light\n  state: 'on'\n  areas: Кабинет\n- names: Ворота гаража\n  domain: cover\n  state: closed\n  areas: Гараж\n  attributes:\n    device_class: garage\n- names: Датчик влажности\n  domain: sensor\n  state: '54'\n  areas: Спальня\n  attributes:\n    unit_of_measurement: '%'\n    device_class: humidity\n- names: Датчик температуры\n  domain: sensor\n  state: '15.6'\n  areas: Гостиная\n  attributes:\n    unit_of_measurement: °C\n    device_class: temperature\n- names: Обогреватель\n  domain: climate\n  state: heat\n  areas: Спальня\n  attributes:\n    current_temperature: 25.0\n    temperature_unit: °C\n    temperature: 20.0\n- names: Пылесос без возврата\n  domain: vacuum\n  state: cleaning\n  areas: Кабинет\n- names: Пылесос без функций\n  domain: vacuum\n  state: docked\n  areas: Кабинет\n- names: Робот-пылесос\n  domain: vacuum\n  state: returning\n  areas: Гостиная\n- names: Розетка на кухне\n  domain: switch\n  state: 'on'\n  areas: Кухня\n- names: Свет в гостиной\n  domain: light\n  state: 'on'\n  areas: Гостиная\n  attributes:\n    brightness: '180'\n    brightness_pct: '71'\n- names: Свет в кабинете\n  domain: light\n  state: 'on'\n  areas: Кабинет\n  attributes:\n    brightness: '180'\n    brightness_pct: '71'\n- names: Свет в спальне\n  domain: light\n  state: 'off'\n  areas: Спальня\n  attributes:\n    brightness:\n- names: Свет на кухне\n  domain: light\n  state: 'on'\n  areas: Кухня\n  attributes:\n    brightness: '180'\n    brightness_pct: '71'\n- names: Телевизор\n  domain: media_player\n  state: playing\n  attributes:\n    volume_level: 1.0\n    media_title: ♥♥ The Best Fireplace Video (3 hours)\n    device_class: tv\n- names: Торшер\n  domain: light\n  state: 'on'\n  areas: Гостиная\n  attributes:\n    brightness: '180'\n    brightness_pct: '71'\n- names: Шторы в гостиной\n  domain: cover\n  state: open\n  areas: Гостиная\n  attributes:\n    current_position: '70'\n- names: Шторы на кухне\n  domain: cover\n  state: open\n  areas: Кухня\n  attributes:\n    current_position: '10'\n",
+    "uri": "homeassistant://assist/context-snapshot"
+  },
+  "reads": {
+    "Свет в кабинете": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "area": "Кабинет",
+        "domain": "light",
+        "name": "Свет в кабинете"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Свет в кабинете\\n  domain: light\\n  state: 'on'\\n  areas: Кабинет\\n  attributes:\\n    brightness: '180'\\n    brightness_pct: '71'\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "Свет на кухне": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "area": "Кухня",
+        "domain": "light",
+        "name": "Свет на кухне"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Свет на кухне\\n  domain: light\\n  state: 'on'\\n  areas: Кухня\\n  attributes:\\n    brightness: '180'\\n    brightness_pct: '71'\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "Робот-пылесос": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "area": "Гостиная",
+        "domain": "vacuum",
+        "name": "Робот-пылесос"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Робот-пылесос\\n  domain: vacuum\\n  state: cleaning\\n  areas: Гостиная\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "Свет в гостиной": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "area": "Гостиная",
+        "domain": "light",
+        "name": "Свет в гостиной"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Свет в гостиной\\n  domain: light\\n  state: 'on'\\n  areas: Гостиная\\n  attributes:\\n    brightness: '180'\\n    brightness_pct: '71'\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "Свет в спальне": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "area": "Спальня",
+        "domain": "light",
+        "name": "Свет в спальне"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Свет в спальне\\n  domain: light\\n  state: 'off'\\n  areas: Спальня\\n  attributes:\\n    brightness:\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "Торшер": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "area": "Гостиная",
+        "domain": "light",
+        "name": "Торшер"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Торшер\\n  domain: light\\n  state: 'on'\\n  areas: Гостиная\\n  attributes:\\n    brightness: '180'\\n    brightness_pct: '71'\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "Белая лампа": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "area": "Кабинет",
+        "domain": "light",
+        "name": "Белая лампа"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Белая лампа\\n  domain: light\\n  state: 'on'\\n  areas: Кабинет\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "Пылесос без функций": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "area": "Кабинет",
+        "domain": "vacuum",
+        "name": "Пылесос без функций"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Пылесос без функций\\n  domain: vacuum\\n  state: docked\\n  areas: Кабинет\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "Пылесос без возврата": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "area": "Кабинет",
+        "domain": "vacuum",
+        "name": "Пылесос без возврата"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Пылесос без возврата\\n  domain: vacuum\\n  state: cleaning\\n  areas: Кабинет\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    }
+  },
+  "vacuum_states": {
+    "docked": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "name": "Робот-пылесос",
+        "area": "Гостиная",
+        "domain": "vacuum"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Робот-пылесос\\n  domain: vacuum\\n  state: docked\\n  areas: Гостиная\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "cleaning": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "name": "Робот-пылесос",
+        "area": "Гостиная",
+        "domain": "vacuum"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Робот-пылесос\\n  domain: vacuum\\n  state: cleaning\\n  areas: Гостиная\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "returning": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "name": "Робот-пылесос",
+        "area": "Гостиная",
+        "domain": "vacuum"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Робот-пылесос\\n  domain: vacuum\\n  state: returning\\n  areas: Гостиная\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "paused": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "name": "Робот-пылесос",
+        "area": "Гостиная",
+        "domain": "vacuum"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Робот-пылесос\\n  domain: vacuum\\n  state: paused\\n  areas: Гостиная\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "idle": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "name": "Робот-пылесос",
+        "area": "Гостиная",
+        "domain": "vacuum"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Робот-пылесос\\n  domain: vacuum\\n  state: idle\\n  areas: Гостиная\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    "error": {
+      "tool": "homeassistant__GetLiveContext",
+      "arguments": {
+        "name": "Робот-пылесос",
+        "area": "Гостиная",
+        "domain": "vacuum"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"result\": \"Live Context: An overview of the areas and the devices in this smart home:\\n- names: Робот-пылесос\\n  domain: vacuum\\n  state: error\\n  areas: Гостиная\\n\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    }
+  },
+  "vacuum_writes": [
+    {
+      "tool": "vacuum__HassVacuumStart",
+      "arguments": {
+        "name": "Робот-пылесос",
+        "area": "Гостиная",
+        "domain": [
+          "vacuum"
+        ]
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Гостиная\", \"type\": \"area\", \"id\": \"gostinaia\"}, {\"name\": \"Робот-пылесос\", \"type\": \"entity\", \"id\": \"vacuum.demo_vacuum_0_ground_floor\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "tool": "vacuum__HassVacuumReturnToBase",
+      "arguments": {
+        "name": "Робот-пылесос",
+        "area": "Гостиная",
+        "domain": [
+          "vacuum"
+        ]
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Гостиная\", \"type\": \"area\", \"id\": \"gostinaia\"}, {\"name\": \"Робот-пылесос\", \"type\": \"entity\", \"id\": \"vacuum.demo_vacuum_0_ground_floor\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    }
+  ],
+  "vacuum_errors": [
+    {
+      "tool": "vacuum__HassVacuumReturnToBase",
+      "arguments": {
+        "name": "Пылесос без возврата",
+        "area": "Кабинет",
+        "domain": [
+          "vacuum"
+        ]
+      },
+      "result": {
+        "content": [
+          {
+            "text": "Error calling tool: No entities supported the required features (given name 'Пылесос без возврата', area 'Кабинет', domains vacuum, features 16)",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "tool": "vacuum__HassVacuumStart",
+      "arguments": {
+        "name": "Пылесос без функций",
+        "area": "Кабинет",
+        "domain": [
+          "vacuum"
+        ]
+      },
+      "result": {
+        "content": [
+          {
+            "text": "Error calling tool: No entities supported the required features (given name 'Пылесос без функций', area 'Кабинет', domains vacuum, features 8192)",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "tool": "vacuum__HassVacuumReturnToBase",
+      "arguments": {
+        "name": "Пылесос без функций",
+        "area": "Кабинет",
+        "domain": [
+          "vacuum"
+        ]
+      },
+      "result": {
+        "content": [
+          {
+            "text": "Error calling tool: No entities supported the required features (given name 'Пылесос без функций', area 'Кабинет', domains vacuum, features 16)",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      }
+    }
+  ],
+  "colours": [
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "red"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        255,
+        0,
+        0
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "mediumblue"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        0,
+        0,
+        205
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "forestgreen"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        34,
+        139,
+        34
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "darkorange"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        255,
+        140,
+        0
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "yellow"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        255,
+        255,
+        0
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "blueviolet"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        138,
+        43,
+        226
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "hotpink"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        255,
+        105,
+        180
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "white"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "cyan"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        0,
+        255,
+        255
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "lime"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        0,
+        255,
+        0
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "navy"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        0,
+        0,
+        128
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "aliceblue"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        240,
+        248,
+        255
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "gray"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        128,
+        128,
+        128
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "grey"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        128,
+        128,
+        128
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "magenta"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        255,
+        0,
+        255
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "orangered"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        255,
+        69,
+        0
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "gold"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        255,
+        215,
+        0
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "pink"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        255,
+        192,
+        203
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "black"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "color": "lightgoldenrodyellow"
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "rgb": [
+        250,
+        250,
+        210
+      ]
+    }
+  ],
+  "temperatures": [
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "temperature": 2700
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "temperature": 4600
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "tool": "light__HassLightSet",
+      "arguments": {
+        "name": "Свет на кухне",
+        "area": "Кухня",
+        "domain": [
+          "light"
+        ],
+        "temperature": 6500
+      },
+      "result": {
+        "content": [
+          {
+            "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кухня\", \"type\": \"area\", \"id\": \"kukhnia\"}, {\"name\": \"Свет на кухне\", \"type\": \"entity\", \"id\": \"light.kitchen_lights\"}], \"failed\": []}}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    }
+  ],
+  "white_write": {
+    "tool": "light__HassLightSet",
+    "arguments": {
+      "name": "Белая лампа",
+      "area": "Кабинет",
+      "domain": [
+        "light"
+      ],
+      "color": "red"
+    },
+    "result": {
+      "content": [
+        {
+          "text": "{\"speech\": {}, \"response_type\": \"action_done\", \"data\": {\"success\": [{\"name\": \"Кабинет\", \"type\": \"area\", \"id\": \"kabinet\"}, {\"name\": \"Белая лампа\", \"type\": \"entity\", \"id\": \"light.belaia_lampa\"}], \"failed\": []}}",
+          "type": "text"
+        }
+      ],
+      "isError": false
+    }
+  }
+}

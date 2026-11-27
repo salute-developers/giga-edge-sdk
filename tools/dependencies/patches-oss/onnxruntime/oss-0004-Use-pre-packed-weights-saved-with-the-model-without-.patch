@@ -1,0 +1,1853 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:08:16 +0000
+Subject: [PATCH 4/4] Use pre-packed weights saved with the model without
+ re-packing
+
+With session.save_external_prepacked_constant_initializers a session can
+save pre-packed weights next to the model, but loading still runs PrePack()
+on the source weights and only then looks the result up in the saved data.
+The new session option
+session.use_prepacked_constant_initializers_without_repack ("0" by default)
+lets supported CPU kernels take the saved buffers directly: the source
+weights are not read and nothing is packed again, which saves load time and
+peak memory.
+
+- OpKernel gets two hooks: GetPrePackedWeightsFormat() names the packing
+  format of an input, and AcceptPrePackedMetadata() checks the saved buffers
+  against the tensor metadata and sets up the kernel without reading the
+  tensor data. Gemm (SGEMM), LSTM and the MatMulInteger family (QGEMM)
+  implement them; MLAS reports its packing formats through
+  MlasGemmPackBFormat(), versioned and tied to the selected kernel.
+- The writer aligns every blob to kAllocAlignment and adds prepacked_v2_*
+  entries that key the buffers by operator, input, type, shape and format.
+  Older readers skip these entries.
+- The loader maps (or reads) the saved blobs from the external data file.
+  Files passed with AddExternalInitializersFromFilesInMemory are used in
+  place: both the source and the packed weights point into the caller's
+  buffer.
+- Missing, stale or incompatible entries fall back to the regular PrePack()
+  path. Buffers owned by the caller are never shared across sessions.
+
+Two existing tests now expect aligned blobs and an ONNX Runtime error
+instead of a filesystem exception for a missing external data file.
+---
+ .../onnxruntime/core/framework/op_kernel.h    |  11 +
+ .../onnxruntime_session_options_config_keys.h |   7 +
+ .../core/framework/prepacked_weights.h        |   3 +
+ .../framework/prepacked_weights_container.cc  |   8 +
+ .../framework/prepacked_weights_container.h   |  41 +-
+ onnxruntime/core/framework/session_state.cc   | 119 ++-
+ onnxruntime/core/framework/session_state.h    |   5 +
+ .../framework/tensor_external_data_info.cc    |  13 +
+ .../core/framework/tensorprotoutils.cc        |  56 +-
+ onnxruntime/core/graph/graph.cc               |  47 +-
+ onnxruntime/core/mlas/inc/mlas.h              |   7 +
+ onnxruntime/core/mlas/lib/qgemm.cpp           |  34 +
+ onnxruntime/core/mlas/lib/sgemm.cpp           |  15 +
+ onnxruntime/core/optimizer/initializer.cc     |   5 +-
+ onnxruntime/core/providers/cpu/math/gemm.cc   |  30 +
+ onnxruntime/core/providers/cpu/math/gemm.h    |   4 +
+ .../cpu/quantization/matmul_integer_base.h    |  36 +
+ .../core/providers/cpu/rnn/deep_cpu_lstm.cc   |  27 +
+ .../core/providers/cpu/rnn/deep_cpu_lstm.h    |   4 +
+ .../framework/prepacked_from_storage_test.cc  | 909 ++++++++++++++++++
+ .../test/framework/tensorutils_test.cc        |   4 +-
+ .../test/optimizer/initializer_test.cc        |   2 +-
+ 22 files changed, 1359 insertions(+), 28 deletions(-)
+ create mode 100644 onnxruntime/test/framework/prepacked_from_storage_test.cc
+
+diff --git a/include/onnxruntime/core/framework/op_kernel.h b/include/onnxruntime/core/framework/op_kernel.h
+index 375f0a4dc8dd2cd5621e013f3b2bc7110f2bc841..557be93be79b703da3c4cad38498026ebe1eeaa5 100644
+--- a/include/onnxruntime/core/framework/op_kernel.h
++++ b/include/onnxruntime/core/framework/op_kernel.h
+@@ -130,6 +130,17 @@ class OpKernel {
+     return Status::OK();
+   }
+ 
++  // Empty means this input cannot consume serialized pre-packs without PrePack().
++  virtual std::string GetPrePackedWeightsFormat(int /*input_idx*/) const { return {}; }
++
++  // Validate sizes and initialize state using only tensor metadata. Do not read tensor data.
++  // Leave the kernel unchanged when declining. UseSharedPrePackedBuffers attaches the buffers.
++  virtual Status AcceptPrePackedMetadata(const Tensor&, int, const PrePackedWeights&,
++                                        bool& accepted) {
++    accepted = false;
++    return Status::OK();
++  }
++
+   const OrtDevice GetDevice(OrtMemType mem_type) const;
+   const OpKernelInfo& Info() const {
+     return *op_kernel_info_;
+diff --git a/include/onnxruntime/core/session/onnxruntime_session_options_config_keys.h b/include/onnxruntime/core/session/onnxruntime_session_options_config_keys.h
+index 97e53e6acee5acf6a2d87a90ad22b11fbac71e9a..f894d409e6bde5df30dd064234f166a24e5658f0 100644
+--- a/include/onnxruntime/core/session/onnxruntime_session_options_config_keys.h
++++ b/include/onnxruntime/core/session/onnxruntime_session_options_config_keys.h
+@@ -302,6 +302,13 @@ static const char* const kOrtSessionOptionsModelExternalInitializersFileFolderPa
+ static const char* const kOrtSessionOptionsSavePrePackedConstantInitializers =
+     "session.save_external_prepacked_constant_initializers";
+ 
++// "1" allows supported CPU kernels to use compatible external pre-packed initializers
++// without re-packing. Default: "0". The caller must ensure the cache belongs to the
++// model: initializer bytes and external file integrity are not verified on load.
++// Missing or incompatible metadata falls back to normal pre-packing.
++static const char* const kOrtSessionOptionsUsePrePackedConstantInitializersWithoutRepack =
++    "session.use_prepacked_constant_initializers_without_repack";
++
+ // Use this config when you want to collect memory stats for each node in the graph.
+ // The file format is a CSV file with the following columns:
+ // The file will be created if it does not exist, and will be overwritten if it does.
+diff --git a/onnxruntime/core/framework/prepacked_weights.h b/onnxruntime/core/framework/prepacked_weights.h
+index 9695be1e0554cd1c6dca87c0e1b451f80129636b..e7ff16292cfd6ef1436a1124ff648ebaca40c4d1 100644
+--- a/onnxruntime/core/framework/prepacked_weights.h
++++ b/onnxruntime/core/framework/prepacked_weights.h
+@@ -20,6 +20,9 @@ struct PrePackedWeights final {
+   InlinedVector<IAllocatorUniquePtr<void>> buffers_;  // cache pre-packed buffers associated with the kernel
+   InlinedVector<size_t> buffer_sizes_;                // cache sizes of pre-packed buffers (in bytes)
+ 
++  // The caller owns these buffers. They must not outlive the session in a shared container.
++  bool buffers_owned_externally_{false};
++
+   // Produces a hash of the buffers stored in the given instance of this class
+   HashValue GetHash() const;
+ 
+diff --git a/onnxruntime/core/framework/prepacked_weights_container.cc b/onnxruntime/core/framework/prepacked_weights_container.cc
+index 7c832a0ac26913bacd3d1308194ef6f15f858d89..98dabdd4a3a0b16c14681bd7655e4e5ec021134f 100644
+--- a/onnxruntime/core/framework/prepacked_weights_container.cc
++++ b/onnxruntime/core/framework/prepacked_weights_container.cc
+@@ -15,6 +15,7 @@ PrePackedWeights PrePackedWeights::CreateReferringCopy() const {
+   }
+ 
+   copy.buffer_sizes_ = buffer_sizes_;
++  copy.buffers_owned_externally_ = buffers_owned_externally_;
+   return copy;
+ }
+ 
+@@ -48,6 +49,7 @@ const PrePackedWeights& PrepackedWeightsContainer::GetWeight(const std::string&
+ }
+ 
+ bool PrepackedWeightsContainer::WriteWeight(const std::string& key, PrePackedWeights&& packed_weight) {
++  if (packed_weight.buffers_owned_externally_) return false;
+   auto ret = prepacked_weights_map_.insert(std::make_pair(key, std::move(packed_weight)));
+   return ret.second;
+ }
+@@ -97,6 +99,12 @@ std::optional<PrePackedWeights> PrepackedWeightsForGraph::ReplaceWithReferenceIf
+     return std::nullopt;
+   }
+ 
++  if (it->second.buffers_owned_externally_) {
++    // Keep caller-owned views in this graph. The shared container must use the regenerated buffers.
++    if (save_mode_on_) weight_prepacks_for_saving_[weight_name].insert(key);
++    return std::nullopt;
++  }
++
+   PrePackedWeights result = std::move(it->second);
+   if (save_mode_on_) {
+     it->second = result.CreateReferringCopy();
+diff --git a/onnxruntime/core/framework/prepacked_weights_container.h b/onnxruntime/core/framework/prepacked_weights_container.h
+index f48c790eb41263faf2af3a59d672b39670cd5c38..8f073f5e60787d2301f60d2d318bd5726f55f036 100644
+--- a/onnxruntime/core/framework/prepacked_weights_container.h
++++ b/onnxruntime/core/framework/prepacked_weights_container.h
+@@ -43,7 +43,7 @@ class PrepackedWeightsContainer final {
+ 
+   // Writes the PrePackedWeights instance pertaining to the provided key.
+   // The key is : op_type + "+" + hash_of_prepacked_buffers_in_the_PrepackedWeights_instance.
+-  // Returns a boolean indicating if the insertion took place.
++  // Returns false for caller-owned buffers or if the key already exists.
+   bool WriteWeight(const std::string& key, PrePackedWeights&& packed_weight);
+ 
+   // Returns a boolean indicating if there is a PrePackedWeights instance
+@@ -104,6 +104,40 @@ class PrepackedWeightsForGraph {
+ 
+   void InsertPrepackedWeights(const std::string& key, PrePackedWeights&& packed_weight);
+ 
++  void RecordLoadedKey(const std::string& weight_name, const std::string& key) {
++    loaded_weight_keys_[weight_name].insert(key);
++  }
++
++  const KeysPerWeight* GetLoadedKeysForWeight(const std::string& weight_name) const {
++    auto hit = loaded_weight_keys_.find(weight_name);
++    return hit == loaded_weight_keys_.end() ? nullptr : &hit->second;
++  }
++
++  // Metadata keys are scoped to the initializer, including outer-scope initializers.
++  using StorageKeys = std::unordered_map<std::string, std::string>;
++  void AddStorageKey(const std::string& weight_name, const std::string& storage_key, const std::string& blob_key) {
++    storage_keys_[weight_name].insert_or_assign(storage_key, blob_key);
++  }
++
++  void RecordStorageUseForSaving(const std::string& weight_name, const std::string& storage_key) {
++    if (save_mode_on_) weight_prepacks_for_saving_[weight_name].insert(GetStorageKeys(weight_name).at(storage_key));
++  }
++
++  const StorageKeys& GetStorageKeys(const std::string& weight_name) const {
++    static const StorageKeys empty;
++    auto it = storage_keys_.find(weight_name);
++    return it == storage_keys_.end() ? empty : it->second;
++  }
++
++  const PrePackedWeights* GetPrepackedWeightsFromStorage(const std::string& weight_name,
++                                                         const std::string& storage_key) const {
++    const auto& keys = GetStorageKeys(weight_name);
++    auto it = keys.find(storage_key);
++    const auto* loaded_keys = GetLoadedKeysForWeight(weight_name);
++    if (it == keys.end() || loaded_keys == nullptr || loaded_keys->count(it->second) == 0) return nullptr;
++    return GetPrepackedWeights(it->second);
++  }
++
+   // Overwrites the existing weights and associates key with weight_name
+   void WritePackedMaybeForSave(const std::string& weight_name, const std::string& key,
+                                PrePackedWeights&& packed_weight);
+@@ -113,7 +147,8 @@ class PrepackedWeightsForGraph {
+   // The function would add or replace existing entry with references to it.
+   // If the entry is present, it would replace it with references to the existing entry.
+   // If the entry is not present, it would add reference to refer_if_absent
+-  // If the entry is present it would return the existing entry otherwise std::nullopt
++  // Caller-owned buffers stay in this graph and are never returned for cross-session sharing.
++  // If a transferable entry is present it returns that entry, otherwise std::nullopt.
+   // Reference in this context means a non-owning smart pointer. Essentially, this function
+   // replaces the existing entry with the same entry, but transfers the ownership outside
+   // the container.
+@@ -163,8 +198,10 @@ class PrepackedWeightsForGraph {
+ 
+  private:
+   PrepackedKeyToBlobMap& key_to_blobs_;
++  WeightToPrePacksMap loaded_weight_keys_;
+   bool save_mode_on_;
+   WeightToPrePacksMap weight_prepacks_for_saving_;
++  std::unordered_map<std::string, StorageKeys> storage_keys_;
+ };
+ 
+ }  // namespace onnxruntime
+diff --git a/onnxruntime/core/framework/session_state.cc b/onnxruntime/core/framework/session_state.cc
+index 7d0026cc3555850e5a6dc643c9a15cfa4c9b8c48..50da2bbb7a5462c16e7e72123a6fa2bcfe5ede3e 100644
+--- a/onnxruntime/core/framework/session_state.cc
++++ b/onnxruntime/core/framework/session_state.cc
+@@ -16,6 +16,7 @@
+ #include "core/framework/prepacked_weights_container.h"
+ #include "core/framework/session_state_utils.h"
+ #include "core/framework/utils.h"
++#include "core/mlas/inc/mlas.h"
+ #include "core/providers/cpu/controlflow/utils.h"
+ #include "core/session/onnxruntime_session_options_config_keys.h"
+ 
+@@ -402,6 +403,15 @@ static Status KernelUseSharedPrePackedBuffers(OpKernel& kernel, int input_idx,
+   return Status::OK();
+ }
+ 
++static Status KernelAcceptPrePackedMetadata(OpKernel& kernel, const Tensor& tensor, int input_idx,
++                                            const PrePackedWeights& weights, bool& accepted) {
++  ORT_RETURN_IF_ERROR(kernel.AcceptPrePackedMetadata(tensor, input_idx, weights, accepted));
++  if (accepted) {
++    ORT_RETURN_IF_ERROR(KernelUseSharedPrePackedBuffers(kernel, input_idx, weights, kernel.Node().Name()));
++  }
++  return Status::OK();
++}
++
+ static std::string GenerateKeyForPrepackedWeightsMap(const std::string& op_type,
+                                                      const PrePackedWeights& pre_packed_weights) {
+   std::ostringstream ss_1;
+@@ -412,10 +422,80 @@ static std::string GenerateKeyForPrepackedWeightsMap(const std::string& op_type,
+   return ss_1.str();
+ }
+ 
++static bool PrepackedBuffersMatch(const PrePackedWeights& disk_weights, const PrePackedWeights& generated_weights) {
++  if (disk_weights.buffer_sizes_ != generated_weights.buffer_sizes_) return false;
++  const auto alignment = MlasGetPreferredBufferAlignment();
++  return std::all_of(disk_weights.buffers_.begin(), disk_weights.buffers_.end(), [alignment](const auto& buffer) {
++    return reinterpret_cast<uintptr_t>(buffer.get()) % alignment == 0;
++  });
++}
++
++static std::string GenerateKeyForPrepackedWeights(const std::string& op_type,
++                                                 const PrePackedWeights& weights,
++                                                 PrepackedWeightsForGraph& prepacked_for_graph,
++                                                 const std::string& input_name,
++                                                 const std::string& storage_key) {
++  auto key = GenerateKeyForPrepackedWeightsMap(op_type, weights);
++  const auto* disk_weights = prepacked_for_graph.GetPrepackedWeights(key);
++  if (disk_weights && !PrepackedBuffersMatch(*disk_weights, weights)) {
++    key += ":repacked";
++  }
++  if (!storage_key.empty() && prepacked_for_graph.IsSaveModeOn()) {
++    prepacked_for_graph.AddStorageKey(input_name, storage_key, key);
++  }
++  return key;
++}
++
++// Length-prefixed fields and hex encoding avoid delimiters in node names and attributes.
++static std::string MakePrepackedStorageKey(const OpKernel& kernel, const Tensor& tensor, int input_idx) {
++#if !defined(ORT_MINIMAL_BUILD)
++  const auto format = kernel.GetPrePackedWeightsFormat(input_idx);
++  if (format.empty()) return {};
++  const auto& node = kernel.Node();
++  std::string description;
++  auto append = [&description](const std::string& field) {
++    description += std::to_string(field.size()) + ":" + field;
++  };
++  append("ort-prepacked-v2");
++  append(node.OpType());
++  append(node.Domain());
++  append(std::to_string(node.SinceVersion()));
++  append(node.Name());
++  append(std::to_string(input_idx));
++  append(std::to_string(tensor.GetElementType()));
++  append(std::to_string(tensor.Shape().NumDimensions()));
++  for (auto dim : tensor.Shape().GetDims()) append(std::to_string(dim));
++  append(format);
++  std::vector<std::string> attributes;
++  for (const auto& attribute : node.GetAttributes()) attributes.push_back(attribute.first);
++  std::sort(attributes.begin(), attributes.end());
++  for (const auto& name : attributes) {
++    append(name);
++    append(node.GetAttributes().at(name).SerializeAsString());
++  }
++  constexpr char hex[] = "0123456789abcdef";
++  std::string key;
++  key.reserve(description.size() * 2);
++  for (unsigned char ch : description) {
++    key += hex[ch >> 4];
++    key += hex[ch & 15];
++  }
++  return key;
++#else
++  ORT_UNUSED_PARAMETER(kernel);
++  ORT_UNUSED_PARAMETER(tensor);
++  ORT_UNUSED_PARAMETER(input_idx);
++  return {};
++#endif
++}
++
+ Status SessionState::PrepackConstantInitializedTensors(
+     InlinedHashMap<std::string, size_t>& constant_initializers_use_count,
+     const std::unordered_map<std::string, const OrtValue*>& initializers_to_share_map) {
+-  auto prepacked_constant_weights = [this, &constant_initializers_use_count, &initializers_to_share_map](
++  const bool use_from_storage = sess_options_.config_options.GetConfigOrDefault(
++                                    kOrtSessionOptionsUsePrePackedConstantInitializersWithoutRepack, "0") == "1";
++  auto prepacked_constant_weights = [this, &constant_initializers_use_count,
++                                     &initializers_to_share_map, use_from_storage](
+                                         bool should_cache_prepacked_weights_for_shared_initializers) -> Status {
+     for (auto& node : GetGraphViewer().Nodes()) {
+       if (sess_options_.IsLoadCancellationFlagSet()) {
+@@ -440,12 +520,33 @@ Status SessionState::PrepackConstantInitializedTensors(
+                 bool is_packed = false;
+                 const Tensor& const_initialized_tensor = constant_initialized_tensors[ort_value_idx].Get<Tensor>();
+ 
++                const bool needs_storage_key = (use_from_storage || prepacked_for_graph->IsSaveModeOn()) &&
++                                               node.GetExecutionProviderType() == kCpuExecutionProvider;
++                const auto storage_key = needs_storage_key
++                                             ? MakePrepackedStorageKey(*kernel, const_initialized_tensor, input_idx)
++                                             : std::string{};
++                bool used_from_storage = false;
++                if (use_from_storage && !storage_key.empty()) {
++                  const auto* weights = prepacked_for_graph->GetPrepackedWeightsFromStorage(input_name, storage_key);
++                  if (weights != nullptr) {
++                    ORT_RETURN_IF_ERROR(KernelAcceptPrePackedMetadata(
++                        *kernel, const_initialized_tensor, input_idx, *weights, used_from_storage));
++                    if (used_from_storage) {
++                      prepacked_for_graph->RecordStorageUseForSaving(input_name, storage_key);
++                    }
++                  }
++                }
++
++                if (used_from_storage) ++used_prepacked_weights_from_storage_counter_;
++
+                 auto iter = initializers_to_share_map.find(input_name);
+                 bool is_shared_initializer = (iter != initializers_to_share_map.end());
+ 
+                 // Caching pre-packed weights is limited to shared initializers associated with the CPU EP for now
+-                if (is_shared_initializer && should_cache_prepacked_weights_for_shared_initializers &&
+-                    node.GetExecutionProviderType() == kCpuExecutionProvider) {
++                if (used_from_storage) {
++                  is_packed = true;
++                } else if (is_shared_initializer && should_cache_prepacked_weights_for_shared_initializers &&
++                           node.GetExecutionProviderType() == kCpuExecutionProvider) {
+                   // caching of pre-packed weights' turned ON
+ 
+                   AllocatorPtr allocator_for_caching = prepacked_weights_container_->GetOrCreateAllocator(CPU);
+@@ -478,9 +579,8 @@ Status SessionState::PrepackConstantInitializedTensors(
+                     // The key for the pre-packed weights container lookup is the op_type + hash of the prepacked-weight
+                     // that we just got by invoking PrePack() on this kernel.
+ 
+-                    const std::string prepacked_weights_container_key =
+-                        GenerateKeyForPrepackedWeightsMap(op_type,
+-                                                          weights_to_be_filled_in);
++                    const std::string prepacked_weights_container_key = GenerateKeyForPrepackedWeights(
++                        op_type, weights_to_be_filled_in, *prepacked_for_graph, input_name, storage_key);
+ 
+                     bool container_contains_packed_weight = prepacked_weights_container_->HasWeight(
+                         prepacked_weights_container_key);
+@@ -567,9 +667,8 @@ Status SessionState::PrepackConstantInitializedTensors(
+                   // produce them.
+                   if (is_packed && !weights_to_be_filled_in.buffers_.empty()) {
+                     const auto& op_type = node.OpType();
+-                    const std::string prepacked_weights_container_key = GenerateKeyForPrepackedWeightsMap(
+-                        op_type,
+-                        weights_to_be_filled_in);
++                    const std::string prepacked_weights_container_key = GenerateKeyForPrepackedWeights(
++                        op_type, weights_to_be_filled_in, *prepacked_for_graph, input_name, storage_key);
+ 
+                     // See if we can use pre-packed data from disk
+                     const auto* weights_to_use = prepacked_for_graph->GetPrepackedWeights(
+@@ -590,7 +689,7 @@ Status SessionState::PrepackConstantInitializedTensors(
+                 }
+ 
+                 if (is_packed) {
+-                  ++number_of_prepacks_counter_;
++                  if (!used_from_storage) ++number_of_prepacks_counter_;
+ 
+                   if (constant_initializers_use_count.count(input_name) && --constant_initializers_use_count[input_name] == 0) {
+                     // release the constant initialized tensor
+diff --git a/onnxruntime/core/framework/session_state.h b/onnxruntime/core/framework/session_state.h
+index 71b88cb692f6f8a66b91ac0e45e64099ef97b4d3..37bbb70e5b0621f6521ef4f93042a0220fbf3bfb 100644
+--- a/onnxruntime/core/framework/session_state.h
++++ b/onnxruntime/core/framework/session_state.h
+@@ -322,6 +322,10 @@ class SessionState {
+     return number_of_prepacks_counter_;
+   }
+ 
++  size_t GetUsedPrePackedWeightsFromStorageCounter() const {
++    return used_prepacked_weights_from_storage_counter_;
++  }
++
+   size_t GetUsedSharedPrePackedWeightCounter() const {
+     return used_shared_pre_packed_weights_counter_;
+   }
+@@ -571,6 +575,7 @@ class SessionState {
+   // Counter for number of times pre-packing of weights was performed across kernels
+   // part the model
+   size_t number_of_prepacks_counter_ = 0;
++  size_t used_prepacked_weights_from_storage_counter_ = 0;
+ 
+   // Counter for number of times a shared version of the pre-packed weight corresponding to
+   // a constant initialized weight was used by the session state
+diff --git a/onnxruntime/core/framework/tensor_external_data_info.cc b/onnxruntime/core/framework/tensor_external_data_info.cc
+index 971851db62437cda4e67c6ba5295eb894dd7f9fa..388a4266feefc01f11d8d19fadc4c737ac5f0d06 100644
+--- a/onnxruntime/core/framework/tensor_external_data_info.cc
++++ b/onnxruntime/core/framework/tensor_external_data_info.cc
+@@ -124,6 +124,11 @@ std::ostream& ExternalDataInfo::WritePrepackedToFileAndAddToProto(
+           return os;
+         }
+       }
++      // Small packed buffers also need the alignment provided by the allocator.
++      const size_t padding = (kAllocAlignment - external_offset % kAllocAlignment) % kAllocAlignment;
++      for (size_t pad = 0; pad < padding; ++pad) os.put('\0');
++      if (!os) return os;
++      external_offset = SafeInt<int64_t>(external_offset) + padding;
+       if (prepack_count++ > 0) {
+         prepacked_entry << "|";
+       }
+@@ -140,6 +145,14 @@ std::ostream& ExternalDataInfo::WritePrepackedToFileAndAddToProto(
+     prepacked->set_key(std::move(prepacked_key));
+     prepacked->set_value(prepacked_entry.str());
+   }
++  // No pipes: older readers ignore these entries and retain the legacy hash lookup.
++  size_t storage_key_count = 0;
++  for (const auto& [storage_key, blob_key] : prepacked_for_graph.GetStorageKeys(proto.name())) {
++    if (blob_keys.count(blob_key) == 0) continue;
++    auto* entry = proto.add_external_data();
++    entry->set_key(MakeString("prepacked_v2_", storage_key_count++));
++    entry->set_value(storage_key + ":" + blob_key);
++  }
+   return os;
+ }
+ }  // namespace onnxruntime
+\ No newline at end of file
+diff --git a/onnxruntime/core/framework/tensorprotoutils.cc b/onnxruntime/core/framework/tensorprotoutils.cc
+index 1607d950059c3e0747b23ab00f411595693c69ad..29616ba92bceb3fcd2898de690ec545d9520cac9 100644
+--- a/onnxruntime/core/framework/tensorprotoutils.cc
++++ b/onnxruntime/core/framework/tensorprotoutils.cc
+@@ -1013,7 +1013,8 @@ ORT_API(void, OrtUninitializeBuffer, _In_opt_ void* input, size_t input_len, enu
+ 
+ #if !defined(__wasm__)
+ static Status GetFileContent(const Env& env, const std::filesystem::path& file_path, FileOffsetType offset,
+-                             size_t length, IAllocatorUniquePtr<void>& external_data) {
++                             size_t length, IAllocatorUniquePtr<void>& external_data, bool* is_mapped = nullptr) {
++  if (is_mapped) *is_mapped = false;
+   // query length if it is 0
+   if (length == 0) {
+     // The return type of std::filesystem::file_size is uintmax_t which could be bigger than size_t
+@@ -1028,6 +1029,7 @@ static Status GetFileContent(const Env& env, const std::filesystem::path& file_p
+       IAllocatorUniquePtr<void> raw_buffer(mapped_memory.release(),
+                                            mapped_memory.get_deleter());
+       external_data.swap(raw_buffer);
++      if (is_mapped) *is_mapped = true;
+       return Status::OK();
+     }
+   }
+@@ -1043,6 +1045,22 @@ static Status GetFileContent(const Env& env, const std::filesystem::path& file_p
+ }
+ #endif
+ 
++static void RegisterPrepackedStorageKeys(const ONNX_NAMESPACE::TensorProto& tensor_proto,
++                                         const ExternalDataInfo::PrepackedInfos& prepacked_infos,
++                                         PrepackedWeightsForGraph& prepacked_info) {
++  for (const auto& entry : tensor_proto.external_data()) {
++    if (entry.key().rfind("prepacked_v2_", 0) != 0) continue;
++    const auto separator = entry.value().find(':');
++    if (separator == std::string::npos || separator == 0 || separator % 2 != 0) continue;
++    const auto storage_key = entry.value().substr(0, separator);
++    if (storage_key.find_first_not_of("0123456789abcdef") != std::string::npos) continue;
++    const auto blob_key = entry.value().substr(separator + 1);
++    if (prepacked_infos.count(blob_key) != 0) {
++      prepacked_info.AddStorageKey(tensor_proto.name(), storage_key, blob_key);
++    }
++  }
++}
++
+ Status GetExtDataFromTensorProto(const Env& env,
+                                  const std::filesystem::path& model_path,
+                                  const ONNX_NAMESPACE::TensorProto& tensor_proto,
+@@ -1080,6 +1098,24 @@ Status GetExtDataFromTensorProto(const Env& env,
+                   " kTensorProtoMemoryAddressTag address points to length: ", static_cast<size_t>(raw_data_safe_len),
+                   " while shape has bytes size: ", tensor.SizeInBytes());
+     Tensor::InitOrtValue(std::move(tensor), ort_value);
++    if (prepacked_info != nullptr && !prepacked_infos->empty()) {
++      // In-memory injection validated the ranges and converted blob offsets to addresses.
++      for (const auto& [key, blobs] : *prepacked_infos) {
++        PrePackedWeights weights;
++        weights.buffers_owned_externally_ = true;
++        for (const auto& [address, length, checksum] : blobs) {
++          ORT_UNUSED_PARAMETER(checksum);
++          ORT_RETURN_IF(address == 0, "Invalid address for in-memory pre-packed blob: ", key);
++          weights.buffers_.emplace_back(reinterpret_cast<void*>(static_cast<intptr_t>(address)), [](void*) {});
++          weights.buffer_sizes_.push_back(length);
++        }
++        prepacked_info->InsertPrepackedWeights(key, std::move(weights));
++        prepacked_info->RecordLoadedKey(name, key);
++      }
++      if (endian::native == endian::little) {
++        RegisterPrepackedStorageKeys(tensor_proto, *prepacked_infos, *prepacked_info);
++      }
++    }
+   } else {
+ #if defined(__wasm__)
+     ORT_RETURN_IF(file_offset < 0 || file_offset + raw_data_safe_len >= 4294967296,
+@@ -1109,7 +1145,11 @@ Status GetExtDataFromTensorProto(const Env& env,
+ #else
+     //  The GetFileContent function doesn't report error if the requested data range is invalid. Therefore we need to
+     //  manually check file size first.
+-    std::uintmax_t file_length = std::filesystem::file_size(external_data_file_path);
++    size_t file_length = 0;
++    const auto file_status = env.GetFileLength(external_data_file_path.c_str(), file_length);
++    ORT_RETURN_IF(!file_status.IsOK(), "External initializer: ", name, " cannot read external data file: ",
++                  ToUTF8String(external_data_file_path), ". Supply external initializer files in memory when loading ",
++                  "a model without its external files. ", file_status.ErrorMessage());
+ 
+     SafeInt<FileOffsetType> end_of_read(file_offset);
+     end_of_read += raw_data_safe_len;
+@@ -1119,8 +1159,9 @@ Status GetExtDataFromTensorProto(const Env& env,
+                   " are out of bounds or can not be read in full.");
+ 
+     IAllocatorUniquePtr<void> ext_data_buf;
++    bool all_data_mapped = false;
+     ORT_RETURN_IF_ERROR(GetFileContent(env, external_data_file_path, file_offset, raw_data_safe_len,
+-                                       ext_data_buf));
++                                       ext_data_buf, &all_data_mapped));
+ 
+     // Data on disk is little endian
+     if constexpr (endian::native != endian::little) {
+@@ -1162,15 +1203,22 @@ Status GetExtDataFromTensorProto(const Env& env,
+                         " is out of bounds and can not read in full");
+ 
+           IAllocatorUniquePtr<void> data_ptr;
++          bool is_mapped = false;
+           ORT_RETURN_IF_ERROR(GetFileContent(env, external_data_file_path, blob_offset, blob_length,
+-                                             data_ptr));
++                                             data_ptr, &is_mapped));
++          all_data_mapped = all_data_mapped && is_mapped;
+           prepacked_weights.buffers_.push_back(std::move(data_ptr));
+           prepacked_weights.buffer_sizes_.push_back(blob_length);
+         }
+         if (!blobs.empty()) {
+           prepacked_info->InsertPrepackedWeights(key, std::move(prepacked_weights));
++          prepacked_info->RecordLoadedKey(tensor_proto.name(), key);
+         }
+       }
++      // The direct path must not use heap copies or byte-swapped source data.
++      if (all_data_mapped && endian::native == endian::little) {
++        RegisterPrepackedStorageKeys(tensor_proto, *prepacked_infos, *prepacked_info);
++      }
+     }
+ #endif
+   }
+diff --git a/onnxruntime/core/graph/graph.cc b/onnxruntime/core/graph/graph.cc
+index ae82b9f7002a3d61f24a6e1736c3e97511d1a9be..5992424caa70969c398b1473d45979c4805e40ce 100644
+--- a/onnxruntime/core/graph/graph.cc
++++ b/onnxruntime/core/graph/graph.cc
+@@ -3715,23 +3715,58 @@ Status Graph::InjectExternalInitializersFromFilesInMemory(
+       // these should always be in sync as the pointer in name_to_initial_tensor_ is to memory owned by graph_proto_
+       ORT_ENFORCE(existing_entry != mutable_initializers.pointer_end(),
+                   "graph_proto_ is not in sync with name_to_initial_tensor_");
+-      (**existing_entry).clear_data_location();
+       const DataTypeImpl* const type =
+           DataTypeImpl::TensorTypeFromONNXEnum(old_initializer.data_type())->GetElementType();
+       TensorShape tensor_shape = utils::GetTensorShapeFromTensorProto(old_initializer);
+       auto tensor = Tensor(type, tensor_shape, tensor_buffer,
+                            OrtMemoryInfo(CPU, OrtAllocatorType::OrtDeviceAllocator));
+ 
+-      constexpr const bool use_tensor_buffer_true = true;
+-      auto new_tensor_proto = utils::TensorToTensorProto(tensor, tensor_name, use_tensor_buffer_true);
++      const bool has_prepacked_data = external_data_info->HasPrepackedInfo();
++      TensorProto new_tensor_proto;
++      if (has_prepacked_data) {
++        // Keep both source and packed weights in the caller's buffer, including small weights.
++        new_tensor_proto.set_name(tensor_name);
++        new_tensor_proto.set_data_type(old_initializer.data_type());
++        new_tensor_proto.mutable_dims()->CopyFrom(old_initializer.dims());
++        ExternalDataInfo::SetExternalLocationToProto(
++            utils::kTensorProtoMemoryAddressTag, narrow<int64_t>(reinterpret_cast<intptr_t>(tensor_buffer)),
++            tensor.SizeInBytes(), new_tensor_proto);
++        size_t key_count = 0;
++        for (const auto& [key, blobs] : external_data_info->TakePrepackedInfos()) {
++          std::ostringstream value;
++          value << key;
++          for (const auto& [offset, length, checksum] : blobs) {
++            ORT_RETURN_IF(offset < 0 || static_cast<uint64_t>(offset) > external_file_length ||
++                              length > external_file_length - static_cast<size_t>(offset),
++                          "Pre-packed blob: ", key, " is out of bounds in external initializer buffer: ",
++                          ORT_TSTR_CONVERT_TO_PRINTABLE_STRING(external_file));
++            value << "|" << narrow<int64_t>(reinterpret_cast<intptr_t>(external_file_buffer + offset))
++                  << ";" << length << ";" << checksum;
++          }
++          auto* entry = new_tensor_proto.add_external_data();
++          entry->set_key(MakeString("prepacked_", key_count++));
++          entry->set_value(value.str());
++        }
++        for (const auto& entry : old_initializer.external_data()) {
++          if (entry.key().rfind("prepacked_v2_", 0) == 0) *new_tensor_proto.add_external_data() = entry;
++        }
++      } else {
++        constexpr const bool use_tensor_buffer_true = true;
++        new_tensor_proto = utils::TensorToTensorProto(tensor, tensor_name, use_tensor_buffer_true);
++      }
+       // Implied that external data is in memory
+       const bool has_external_data_in_memory = utils::HasExternalData(new_tensor_proto);
+ 
+       OrtValue ort_value;
+-      if (has_external_data_in_memory) {
+-        Tensor::InitOrtValue(std::move(tensor), ort_value);
++      if (has_prepacked_data) {
++        // Deserialization must register the packed views in the session's graph container.
++        ortvalue_initializers_.erase(tensor_name);
++      } else {
++        if (has_external_data_in_memory) {
++          Tensor::InitOrtValue(std::move(tensor), ort_value);
++        }
++        ortvalue_initializers_.insert_or_assign(tensor_name, std::move(ort_value));
+       }
+-      ortvalue_initializers_.insert_or_assign(tensor_name, std::move(ort_value));
+       **existing_entry = std::move(new_tensor_proto);
+     }
+   }
+diff --git a/onnxruntime/core/mlas/inc/mlas.h b/onnxruntime/core/mlas/inc/mlas.h
+index 3575e30721af759e1cee0bd3b474f6706430fa03..d02119f3b200c48de5ede6b3072f1e90f9c14a70 100644
+--- a/onnxruntime/core/mlas/inc/mlas.h
++++ b/onnxruntime/core/mlas/inc/mlas.h
+@@ -682,6 +682,13 @@ MlasSymmQgemmBatch(
+ // Buffer packing routines.
+ //
+ 
++// Serialized packing ABI identifiers. Bump the version when the packing layout changes.
++// A null result means serialization without re-packing is unsupported.
++const char* MLASCALL
++MlasGemmPackBFormat();
++const char* MLASCALL
++MlasGemmPackBFormat(bool AIsSigned, bool BIsSigned);
++
+ size_t
+ MLASCALL
+ MlasGemmPackBSize(
+diff --git a/onnxruntime/core/mlas/lib/qgemm.cpp b/onnxruntime/core/mlas/lib/qgemm.cpp
+index f5b33d2a9ad3441567448052b631ef619571a367..6a56fd0644608429f57d2649b39ef881637089e4 100644
+--- a/onnxruntime/core/mlas/lib/qgemm.cpp
++++ b/onnxruntime/core/mlas/lib/qgemm.cpp
+@@ -297,6 +297,40 @@ MlasSymmQgemmBatch(
+ #pragma warning(pop)
+ #endif
+ 
++const char* MLASCALL
++MlasGemmPackBFormat(bool AIsSigned, bool BIsSigned)
++{
++    const auto* dispatch = MlasGemmQuantGetDispatch(AIsSigned, BIsSigned);
++#if !defined(FORCE_GENERIC_ALGORITHMS)
++#if defined(MLAS_TARGET_AMD64)
++    if (dispatch == &MlasGemmU8X8DispatchSse) return "mlas-qgemm-v1-amd64-U8X8DispatchSse";
++#if defined(_MSC_VER)
++    if (dispatch == &MlasGemmU8S8DispatchSse41) return "mlas-qgemm-v1-amd64-U8S8DispatchSse41";
++#endif
++    if (dispatch == &MlasGemmU8S8DispatchAvx2) return "mlas-qgemm-v1-amd64-U8S8DispatchAvx2";
++    if (dispatch == &MlasGemmU8U8DispatchAvx2) return "mlas-qgemm-v1-amd64-U8U8DispatchAvx2";
++    if (dispatch == &MlasGemmU8U8DispatchAvx2Vnni) return "mlas-qgemm-v1-amd64-U8U8DispatchAvx2Vnni";
++    if (dispatch == &MlasGemmS8S8DispatchAvx2Vnni) return "mlas-qgemm-v1-amd64-S8S8DispatchAvx2Vnni";
++    if (dispatch == &MlasGemmS8U8DispatchAvx2Vnni) return "mlas-qgemm-v1-amd64-S8U8DispatchAvx2Vnni";
++#if !defined(__APPLE__)
++    if (dispatch == &MlasGemmU8S8DispatchAmx) return "mlas-qgemm-v1-amd64-U8S8DispatchAmx";
++#endif
++#endif
++#if defined(MLAS_TARGET_ARM64)
++    if (dispatch == &MlasGemmU8X8DispatchNeon) return "mlas-qgemm-v1-arm64-U8X8DispatchNeon";
++    if (dispatch == &MlasGemmX8S8DispatchNeon) return "mlas-qgemm-v1-arm64-X8S8DispatchNeon";
++    if (dispatch == &MlasGemmU8X8DispatchUdot) return "mlas-qgemm-v1-arm64-U8X8DispatchUdot";
++    if (dispatch == &MlasGemmS8S8DispatchSdot) return "mlas-qgemm-v1-arm64-S8S8DispatchSdot";
++#if defined(__linux__)
++    if (dispatch == &MlasGemmU8X8DispatchUmmla) return "mlas-qgemm-v1-arm64-U8X8DispatchUmmla";
++    if (dispatch == &MlasGemmS8S8DispatchSmmla) return "mlas-qgemm-v1-arm64-S8S8DispatchSmmla";
++#endif
++#endif
++#endif
++    MLAS_UNREFERENCED_PARAMETER(dispatch);
++    return nullptr;
++}
++
+ size_t
+ MLASCALL
+ MlasGemmPackBSize(
+diff --git a/onnxruntime/core/mlas/lib/sgemm.cpp b/onnxruntime/core/mlas/lib/sgemm.cpp
+index 616622a8c1f534532110f733419988118089d904..fc52824e3463391feeb5cd80fbb6873869db2009 100644
+--- a/onnxruntime/core/mlas/lib/sgemm.cpp
++++ b/onnxruntime/core/mlas/lib/sgemm.cpp
+@@ -1634,6 +1634,21 @@ MlasGemmBatch(
+ #pragma warning(pop)
+ #endif
+ 
++const char* MLASCALL
++MlasGemmPackBFormat()
++{
++#if defined(MLAS_TARGET_AMD64) && !defined(FORCE_GENERIC_ALGORITHMS)
++    const auto kernel = GetMlasPlatform().GemmFloatKernel;
++    if (kernel == MlasGemmFloatKernelAvx512F) return "mlas-sgemm-v1-amd64-avx512f";
++    if (kernel == MlasGemmFloatKernelFma3) return "mlas-sgemm-v1-amd64-fma3";
++    if (kernel == MlasGemmFloatKernelAvx) return "mlas-sgemm-v1-amd64-avx";
++    if (kernel == MlasGemmFloatKernelSse) return "mlas-sgemm-v1-amd64-sse";
++#elif defined(MLAS_TARGET_ARM64) && !defined(FORCE_GENERIC_ALGORITHMS)
++    return "mlas-sgemm-v1-arm64-neon";
++#endif
++    return nullptr;
++}
++
+ size_t
+ MLASCALL
+ MlasGemmPackBSize(
+diff --git a/onnxruntime/core/optimizer/initializer.cc b/onnxruntime/core/optimizer/initializer.cc
+index 6fbb4177ce90ab580e3081ad115f346873379c50..982337c1988f33759697ca618e6761fd14a18517 100644
+--- a/onnxruntime/core/optimizer/initializer.cc
++++ b/onnxruntime/core/optimizer/initializer.cc
+@@ -72,10 +72,7 @@ Initializer::Initializer(const Graph& graph, const ONNX_NAMESPACE::TensorProto&
+       data_ = GetTensor(ort_value_);
+       return;
+     }
+-#if !defined(__wasm__)
+-    ORT_ENFORCE(!model_path.empty(),
+-                "model_path must not be empty. Ensure that a path is provided when the model is created or loaded.");
+-#endif
++    // Memory-tagged TensorProtos can be read directly even without a graph OrtValue or model path.
+   }
+ 
+   Tensor tensor;
+diff --git a/onnxruntime/core/providers/cpu/math/gemm.cc b/onnxruntime/core/providers/cpu/math/gemm.cc
+index 5406dd1a404464cdff54cee64e14e4884e2bf43a..a79af1dfeaedb416fa5c1d122c6e44b035984e10 100644
+--- a/onnxruntime/core/providers/cpu/math/gemm.cc
++++ b/onnxruntime/core/providers/cpu/math/gemm.cc
+@@ -246,6 +246,36 @@ template void Gemm<float>::ComputeGemm(CBLAS_TRANSPOSE trans_a, CBLAS_TRANSPOSE
+                                        float* y_data,
+                                        concurrency::ThreadPool* thread_pool);
+ 
++template <typename T>
++std::string Gemm<T>::GetPrePackedWeightsFormat(int input_idx) const {
++  if constexpr (std::is_same_v<T, float>) {
++    const char* format = MlasGemmPackBFormat();
++    if (input_idx == 1 && format) return MakeString(format, ":", trans_B_);
++  }
++  return {};
++}
++
++template <typename T>
++Status Gemm<T>::AcceptPrePackedMetadata(const Tensor& tensor, int input_idx,
++                                        const PrePackedWeights& weights, bool& accepted) {
++  accepted = false;
++  if constexpr (std::is_same_v<T, float>) {
++    if (input_idx != 1 || !tensor.IsDataType<float>() || tensor.Shape().NumDimensions() != 2 ||
++        weights.buffers_.size() != 1 || weights.buffer_sizes_.size() != 1 || !weights.buffers_[0] ||
++        reinterpret_cast<uintptr_t>(weights.buffers_[0].get()) % MlasGetPreferredBufferAlignment() != 0) {
++      return Status::OK();
++    }
++    const auto& shape = tensor.Shape();
++    const size_t K = static_cast<size_t>(shape[trans_B_ == CblasNoTrans ? 0 : 1]);
++    const size_t N = static_cast<size_t>(shape[trans_B_ == CblasNoTrans ? 1 : 0]);
++    const size_t size = MlasGemmPackBSize(N, K);
++    if (size == 0 || size != weights.buffer_sizes_[0]) return Status::OK();
++    b_shape_ = shape;
++    accepted = true;
++  }
++  return Status::OK();
++}
++
+ template <typename T>
+ Status Gemm<T>::PrePack(const Tensor& /* tensor */, int /* input_idx */, AllocatorPtr /*alloc_for_caching*/,
+                         /*out*/ bool& is_packed,
+diff --git a/onnxruntime/core/providers/cpu/math/gemm.h b/onnxruntime/core/providers/cpu/math/gemm.h
+index 953949732560d15591fa0abbdca931b7714b1a10..f1e6a9c38c5ea9dddb878705d64a8894c2e097eb 100644
+--- a/onnxruntime/core/providers/cpu/math/gemm.h
++++ b/onnxruntime/core/providers/cpu/math/gemm.h
+@@ -20,6 +20,10 @@ class Gemm : protected GemmBase, public OpKernel {
+ 
+   Status Compute(OpKernelContext* context) const override;
+ 
++  std::string GetPrePackedWeightsFormat(int input_idx) const override;
++  Status AcceptPrePackedMetadata(const Tensor& tensor, int input_idx,
++                                 const PrePackedWeights& weights, bool& used) override;
++
+   Status PrePack(const Tensor& tensor, int input_idx, AllocatorPtr alloc,
+                  /*out*/ bool& is_packed,
+                  /*out*/ PrePackedWeights* prepacked_weights) override;
+diff --git a/onnxruntime/core/providers/cpu/quantization/matmul_integer_base.h b/onnxruntime/core/providers/cpu/quantization/matmul_integer_base.h
+index e26eae19b8fd4ac04e830e4ee98d74b479a8db9a..f5e90a1f2099f0fdb3c482cd2c79d802e2a27c9d 100644
+--- a/onnxruntime/core/providers/cpu/quantization/matmul_integer_base.h
++++ b/onnxruntime/core/providers/cpu/quantization/matmul_integer_base.h
+@@ -13,6 +13,17 @@ class MatMulIntegerBase : public OpKernel {
+  public:
+   MatMulIntegerBase(const OpKernelInfo& info) : OpKernel(info) {}
+ 
++  std::string GetPrePackedWeightsFormat(int input_idx) const override {
++    if (input_idx != GetBIdx() || Node().Domain() != kMSDomain ||
++        (Node().OpType() != "DynamicQuantizeMatMul" && Node().OpType() != "MatMulIntegerToFloat")) return {};
++    if (Node().InputDefs()[GetBIdx()]->TypeAsProto()->tensor_type().elem_type() !=
++        ONNX_NAMESPACE::TensorProto_DataType_INT8) return {};
++    const bool a_signed = Node().InputDefs()[GetAIdx()]->TypeAsProto()->tensor_type().elem_type() ==
++                          ONNX_NAMESPACE::TensorProto_DataType_INT8;
++    const char* format = MlasGemmPackBFormat(a_signed, true);
++    return format ? MakeString(format, ":", a_signed, ":", IsBTransposed()) : std::string{};
++  }
++
+   Status PrePack(const Tensor& tensor, int input_idx, AllocatorPtr alloc,
+                  /*out*/ bool& is_packed,
+                  /*out*/ PrePackedWeights* prepacked_weights) override {
+@@ -65,6 +76,31 @@ class MatMulIntegerBase : public OpKernel {
+     return Status::OK();
+   }
+ 
++  Status AcceptPrePackedMetadata(const Tensor& tensor, int input_idx,
++                                const PrePackedWeights& weights, bool& accepted) override {
++    accepted = false;
++    if (input_idx != GetBIdx() || IsBTransposed() || tensor.Shape().NumDimensions() != 2 ||
++        (!tensor.IsDataType<int8_t>() && !tensor.IsDataType<uint8_t>())) {
++      return Status::OK();
++    }
++    const auto& shape = tensor.Shape();
++    if (shape[0] <= 0 || shape[1] <= 0) return Status::OK();
++    const auto a_type = Node().InputDefs()[GetAIdx()]->TypeAsProto()->tensor_type().elem_type();
++    const bool a_is_signed = ONNX_NAMESPACE::TensorProto_DataType_INT8 == a_type;
++    const bool b_is_signed = tensor.IsDataType<int8_t>();
++    const size_t expected = MlasGemmPackBSize(SafeInt<size_t>(shape[1]), SafeInt<size_t>(shape[0]),
++                                           a_is_signed, b_is_signed);
++    if (expected == 0 || weights.buffers_.size() != 1 || weights.buffer_sizes_.size() != 1 ||
++        weights.buffers_[0] == nullptr || weights.buffer_sizes_[0] != expected ||
++        reinterpret_cast<uintptr_t>(weights.buffers_[0].get()) % MlasGetPreferredBufferAlignment() != 0) {
++      return Status::OK();
++    }
++    b_shape_ = shape;
++    b_is_signed_ = b_is_signed;
++    accepted = true;
++    return Status::OK();
++  }
++
+   Status UseSharedPrePackedBuffers(std::vector<BufferUniquePtr>& prepacked_buffers,
+                                    int input_idx,
+                                    /*out*/ bool& used_shared_buffers) override {
+diff --git a/onnxruntime/core/providers/cpu/rnn/deep_cpu_lstm.cc b/onnxruntime/core/providers/cpu/rnn/deep_cpu_lstm.cc
+index e95ad707cf2b0462fea95343a3840b6196b698b5..7496cc30bf49c82c1f4b833d6f9718014670730a 100644
+--- a/onnxruntime/core/providers/cpu/rnn/deep_cpu_lstm.cc
++++ b/onnxruntime/core/providers/cpu/rnn/deep_cpu_lstm.cc
+@@ -231,6 +231,33 @@ static void UseSharedPrePackedBuffersImpl(std::vector<BufferUniquePtr>& prepacke
+   packed_tensor.buffer_ = std::move(prepacked_buffers[0]);
+ }
+ 
++std::string DeepCpuLstmOp::GetPrePackedWeightsFormat(int input_idx) const {
++  const char* format = MlasGemmPackBFormat();
++  return (input_idx == 1 || input_idx == 2) && format ? format : std::string{};
++}
++
++Status DeepCpuLstmOp::AcceptPrePackedMetadata(const Tensor& tensor, int input_idx,
++                                              const PrePackedWeights& weights, bool& accepted) {
++  accepted = false;
++  if ((input_idx != 1 && input_idx != 2) || !tensor.IsDataType<float>() ||
++      tensor.Shape().NumDimensions() != 3 || weights.buffers_.size() != 1 ||
++      weights.buffer_sizes_.size() != 1 || !weights.buffers_[0] ||
++      reinterpret_cast<uintptr_t>(weights.buffers_[0].get()) % MlasGetPreferredBufferAlignment() != 0) {
++    return Status::OK();
++  }
++  const auto& shape = tensor.Shape();
++  if (shape[0] != num_directions_ || shape[1] != static_cast<int64_t>(hidden_size_) * 4) return Status::OK();
++  const size_t size = MlasGemmPackBSize(static_cast<size_t>(shape[1]), static_cast<size_t>(shape[2]));
++  const size_t total_size = SafeInt<size_t>(size) * num_directions_;
++  if (size == 0 || total_size != weights.buffer_sizes_[0]) return Status::OK();
++  auto& packed = input_idx == 1 ? packed_W_ : packed_R_;
++  packed.shape_ = shape;
++  packed.weights_size_ = size;
++  packed.buffer_size_ = total_size;
++  accepted = true;
++  return Status::OK();
++}
++
+ Status DeepCpuLstmOp::PrePack(const Tensor& tensor, int input_idx,
+                               AllocatorPtr alloc, /*out*/ bool& is_packed,
+                               /*out*/ PrePackedWeights* prepacked_weights) {
+diff --git a/onnxruntime/core/providers/cpu/rnn/deep_cpu_lstm.h b/onnxruntime/core/providers/cpu/rnn/deep_cpu_lstm.h
+index 9c4c12954022a17dfef451826899da40d7c0d681..6fcd38c20107d7e55a2ba9bcd43aaab0575f63e3 100644
+--- a/onnxruntime/core/providers/cpu/rnn/deep_cpu_lstm.h
++++ b/onnxruntime/core/providers/cpu/rnn/deep_cpu_lstm.h
+@@ -18,6 +18,10 @@ class DeepCpuLstmOp final : public OpKernel, public LSTMBase {
+  public:
+   DeepCpuLstmOp(const OpKernelInfo& info) : OpKernel(info), LSTMBase(info) {}
+ 
++  std::string GetPrePackedWeightsFormat(int input_idx) const override;
++  Status AcceptPrePackedMetadata(const Tensor& tensor, int input_idx,
++                                 const PrePackedWeights& weights, bool& used) override;
++
+   Status PrePack(const Tensor& tensor, int input_idx, AllocatorPtr alloc,
+                  /*out*/ bool& is_packed,
+                  /*out*/ PrePackedWeights* prepacked_weights) override;
+diff --git a/onnxruntime/test/framework/prepacked_from_storage_test.cc b/onnxruntime/test/framework/prepacked_from_storage_test.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..25aab14b161c79bd4926c95974600b607e82e754
+--- /dev/null
++++ b/onnxruntime/test/framework/prepacked_from_storage_test.cc
+@@ -0,0 +1,909 @@
++// Copyright (c) Giga Edge SDK authors.
++// Licensed under the MIT License.
++
++#include <fstream>
++#include <cstdio>
++#include <filesystem>
++#include <cstdlib>
++#include <iterator>
++#include <unordered_map>
++
++#if !defined(_WIN32)
++#include <sys/mman.h>
++#include <unistd.h>
++#endif
++
++#include "core/framework/customregistry.h"
++#include "core/framework/session_state.h"
++#include "core/framework/tensor_external_data_info.h"
++#include "core/mlas/inc/mlas.h"
++#include "core/session/onnxruntime_session_options_config_keys.h"
++#include "test/test_environment.h"
++#include "test/util/include/asserts.h"
++#include "test/util/include/inference_session_wrapper.h"
++#include "test/util/include/temp_dir.h"
++
++#include "gtest/gtest.h"
++
++namespace onnxruntime::test {
++#if !defined(ORT_MINIMAL_BUILD) && !defined(ENABLE_TRAINING_CORE) && !defined(__wasm__)
++namespace {
++#if defined(__linux__)
++bool IsWeightsMapping(const void* data) {
++  std::ifstream maps("/proc/self/maps");
++  std::string line;
++  const auto address = reinterpret_cast<uintptr_t>(data);
++  while (std::getline(maps, line)) {
++    unsigned long long start = 0, end = 0;
++    if (sscanf(line.c_str(), "%llx-%llx", &start, &end) == 2 && address >= start && address < end) {
++      return (line.find("weights.bin") != std::string::npos || line.find("model.onnx.data") != std::string::npos);
++    }
++  }
++  return false;
++}
++#endif
++
++struct MemoryBindings {
++  std::unordered_map<std::string, const void*> sources;
++  std::unordered_map<std::string, std::vector<const void*>> packed;
++};
++
++struct PackingCalls {
++  size_t prepack = 0;
++  size_t allocations = 0;
++};
++
++class PackingAllocator final : public IAllocator {
++ public:
++  PackingAllocator(AllocatorPtr allocator, PackingCalls& calls)
++      : IAllocator(allocator->Info()), allocator_(std::move(allocator)), calls_(calls) {}
++  void* Alloc(size_t size) override {
++    ++calls_.allocations;
++    return allocator_->Alloc(size);
++  }
++  void Free(void* p) override { allocator_->Free(p); }
++
++ private:
++  AllocatorPtr allocator_;
++  PackingCalls& calls_;
++};
++
++// Exercise the production kernel, counting calls and protecting its source mappings.
++class ObservedKernel final : public OpKernel {
++ public:
++  ObservedKernel(const OpKernelInfo& info, std::unique_ptr<OpKernel> kernel, PackingCalls& calls, bool protect_source,
++                 bool accepts_storage, const MemoryBindings* memory = nullptr)
++      : OpKernel(info), kernel_(std::move(kernel)), calls_(calls), accepts_storage_(accepts_storage), memory_(memory) {
++    for (int input = 0; input < static_cast<int>(Node().InputDefs().size()); ++input) {
++      if (GetPrePackedWeightsFormat(input).empty()) continue;
++      const Tensor* tensor = nullptr;
++      if (memory_ || protect_source) {
++        ORT_ENFORCE(info.TryGetConstantInput(input, &tensor));
++        if (memory_) {
++          ORT_ENFORCE(tensor->DataRaw() == memory_->sources.at(Node().InputDefs()[input]->Name()),
++                      "Source initializer was copied from the user buffer");
++        }
++      }
++#if !defined(_WIN32)
++      if (protect_source) {
++        const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
++#if defined(__linux__)
++        ORT_ENFORCE(IsWeightsMapping(tensor->DataRaw()), "Source initializer was copied to the heap");
++#endif
++        const auto address = reinterpret_cast<uintptr_t>(tensor->DataRaw());
++        const auto start = address & ~(page_size - 1);
++        const auto length = ((address - start + tensor->SizeInBytes() + page_size - 1) / page_size) * page_size;
++        ORT_ENFORCE(mprotect(reinterpret_cast<void*>(start), length, PROT_NONE) == 0);
++      }
++#endif
++    }
++  }
++
++  Status Compute(OpKernelContext* context) const override { return kernel_->Compute(context); }
++  Status PrePack(const Tensor& tensor, int input, AllocatorPtr allocator, bool& packed,
++                 PrePackedWeights* weights) override {
++    if (!GetPrePackedWeightsFormat(input).empty()) ++calls_.prepack;
++    return kernel_->PrePack(tensor, input, std::make_shared<PackingAllocator>(allocator, calls_), packed, weights);
++  }
++  Status UseSharedPrePackedBuffers(std::vector<BufferUniquePtr>& buffers, int input, bool& used) override {
++    return kernel_->UseSharedPrePackedBuffers(buffers, input, used);
++  }
++  std::string GetPrePackedWeightsFormat(int input) const override { return kernel_->GetPrePackedWeightsFormat(input); }
++  Status AcceptPrePackedMetadata(const Tensor& tensor, int input, const PrePackedWeights& weights,
++                                 bool& used) override {
++    if (!accepts_storage_) return OpKernel::AcceptPrePackedMetadata(tensor, input, weights, used);
++    if (memory_) {
++      const auto& expected = memory_->packed.at(Node().InputDefs()[input]->Name());
++      ORT_ENFORCE(weights.buffers_.size() == expected.size());
++      for (size_t i = 0; i < expected.size(); ++i) {
++        ORT_ENFORCE(weights.buffers_[i].get() == expected[i], "Packed initializer was copied from the user buffer");
++      }
++    } else {
++#if defined(__linux__)
++      for (const auto& buffer : weights.buffers_) {
++        ORT_ENFORCE(IsWeightsMapping(buffer.get()), "Packed initializer was copied to the heap");
++      }
++#endif
++    }
++    return kernel_->AcceptPrePackedMetadata(tensor, input, weights, used);
++  }
++
++ private:
++  std::unique_ptr<OpKernel> kernel_;
++  PackingCalls& calls_;
++  bool accepts_storage_;
++  const MemoryBindings* memory_;
++};
++
++ONNX_NAMESPACE::ModelProto MakeModel(const std::string& op, bool large = false) {
++  ONNX_NAMESPACE::ModelProto model;
++  model.set_ir_version(10);
++  auto* opset = model.add_opset_import();
++  opset->set_domain("");
++  opset->set_version(14);
++  const bool quantized = op == "DynamicQuantizeMatMul" || op == "MatMulIntegerToFloat";
++  if (quantized) {
++    opset = model.add_opset_import();
++    opset->set_domain(kMSDomain);
++    opset->set_version(1);
++  }
++  auto& graph = *model.mutable_graph();
++  graph.set_name("prepacked_storage");
++  auto add_value = [](auto* value, const char* name, int type, std::initializer_list<int64_t> dims) {
++    value->set_name(name);
++    auto* tensor = value->mutable_type()->mutable_tensor_type();
++    tensor->set_elem_type(type);
++    for (auto dim : dims) tensor->mutable_shape()->add_dim()->set_dim_value(dim);
++  };
++  const bool lstm = op == "LSTM";
++  const bool integer_input = op == "MatMulIntegerToFloat";
++  const int float_type = ONNX_NAMESPACE::TensorProto_DataType_FLOAT;
++  // Large weights occupy whole pages on hosts with 4K, 16K, or 64K pages.
++  const int64_t K = large ? 256 : 3;
++  const int64_t N = large ? 256 : 4;
++  const int64_t hidden_size = large ? 64 : 2;
++  add_value(graph.add_input(), "X", integer_input ? ONNX_NAMESPACE::TensorProto_DataType_UINT8 : float_type,
++            lstm ? std::initializer_list<int64_t>{2, 1, K} : std::initializer_list<int64_t>{2, K});
++  if (lstm) {
++    add_value(graph.add_output(), "Y_h", float_type, {2, 1, hidden_size});
++    add_value(graph.add_output(), "Y_c", float_type, {2, 1, hidden_size});
++  }
++  add_value(graph.add_output(), "Y", float_type,
++            lstm ? std::initializer_list<int64_t>{2, 2, 1, hidden_size} : std::initializer_list<int64_t>{2, N});
++  auto* node = graph.add_node();
++  node->set_name("weight_node:|;\xD1\x83");
++  node->set_op_type(op == "GemmTransposed" ? "Gemm" : op);
++  node->set_domain(quantized ? kMSDomain : "");
++  node->add_input("X");
++  node->add_output("Y");
++  if (lstm) {
++    node->add_output("Y_h");
++    node->add_output("Y_c");
++  }
++  auto add_weight = [&](const char* name, std::initializer_list<int64_t> dims, bool int8) {
++    auto* tensor = graph.add_initializer();
++    tensor->set_name(name);
++    tensor->set_data_type(int8 ? ONNX_NAMESPACE::TensorProto_DataType_INT8 : float_type);
++    size_t count = 1;
++    for (auto dim : dims) {
++      tensor->add_dims(dim);
++      count *= static_cast<size_t>(dim);
++    }
++    if (int8) {
++      std::string data(count, '\0');
++      for (size_t i = 0; i < count; ++i) data[i] = static_cast<char>(static_cast<int>(i % 19) - 9);
++      tensor->set_raw_data(data);
++    } else {
++      std::vector<float> data(count);
++      for (size_t i = 0; i < count; ++i) data[i] = static_cast<float>(static_cast<int>(i % 17) - 8) / 16;
++      tensor->set_raw_data(data.data(), data.size() * sizeof(float));
++    }
++    node->add_input(name);
++  };
++  if (lstm) {
++    add_weight("W", {2, 4 * hidden_size, K}, false);
++    add_weight("R", {2, 4 * hidden_size, hidden_size}, false);
++    auto* hidden = node->add_attribute();
++    hidden->set_name("hidden_size");
++    hidden->set_type(ONNX_NAMESPACE::AttributeProto_AttributeType_INT);
++    hidden->set_i(hidden_size);
++    auto* direction = node->add_attribute();
++    direction->set_name("direction");
++    direction->set_type(ONNX_NAMESPACE::AttributeProto_AttributeType_STRING);
++    direction->set_s("bidirectional");
++  } else {
++    if (op == "GemmTransposed") {
++      add_weight("B", {N, K}, false);
++      auto* transpose = node->add_attribute();
++      transpose->set_name("transB");
++      transpose->set_type(ONNX_NAMESPACE::AttributeProto_AttributeType_INT);
++      transpose->set_i(1);
++    } else {
++      add_weight("B", {K, N}, quantized);
++    }
++    if (quantized) {
++      auto add_scale = [&](const char* name) {
++        auto* tensor = graph.add_initializer();
++        tensor->set_name(name);
++        tensor->set_data_type(float_type);
++        tensor->add_float_data(0.125f);
++        node->add_input(name);
++      };
++      if (integer_input) add_scale("a_scale");
++      add_scale("b_scale");
++    }
++  }
++  return model;
++}
++
++std::vector<OrtValue> RunStorageModel(InferenceSessionWrapper& session, bool lstm, bool integer_input,
++                                      bool large = false, bool shared_output = false) {
++  auto allocator = std::make_shared<CPUAllocator>();
++  OrtValue input;
++  const int64_t K = large ? 256 : 3;
++  Tensor::InitOrtValue(integer_input ? DataTypeImpl::GetType<uint8_t>() : DataTypeImpl::GetType<float>(),
++                       TensorShape(lstm ? std::vector<int64_t>{2, 1, K} : std::vector<int64_t>{2, K}), allocator,
++                       input);
++  if (integer_input) {
++    for (size_t i = 0; i < static_cast<size_t>(2 * K); ++i)
++      input.GetMutable<Tensor>()->MutableData<uint8_t>()[i] = static_cast<uint8_t>(i + 1);
++  } else {
++    for (size_t i = 0; i < static_cast<size_t>(2 * K); ++i)
++      input.GetMutable<Tensor>()->MutableData<float>()[i] = static_cast<float>(i + 1) / 8;
++  }
++  std::vector<OrtValue> outputs;
++  std::vector<std::string> output_names =
++      lstm ? std::vector<std::string>{"Y", "Y_h", "Y_c"} : std::vector<std::string>{"Y"};
++  if (shared_output) output_names.push_back("Y_shared");
++  ORT_THROW_IF_ERROR(session.Run(RunOptions{}, {{"X", input}}, output_names, &outputs));
++  return outputs;
++}
++}  // namespace
++
++class PrepackedFromStorageTest : public testing::TestWithParam<const char*> {};
++
++TEST_P(PrepackedFromStorageTest, RoundTripAndFallback) {
++  const std::string op = GetParam();
++  if (!MlasGemmPackBFormat() ||
++      (op != "Gemm" && op != "GemmTransposed" && op != "LSTM" && !MlasGemmPackBFormat(false, true))) {
++    GTEST_SKIP() << "No serialized packing ABI for this platform";
++  }
++  TemporaryDirectory directory{ORT_TSTR("prepacked_from_storage_test")};
++  const auto model_path = directory.Path() + ORT_TSTR("/model.onnx");
++  SessionOptions options;
++  options.graph_optimization_level = TransformerLevel::Default;
++  options.intra_op_param.thread_pool_size = 1;
++  options.inter_op_param.thread_pool_size = 1;
++  options.enable_cpu_mem_arena = false;
++  options.optimized_model_filepath = model_path;
++  ASSERT_STATUS_OK(options.config_options.AddConfigEntry(kOrtSessionOptionsSavePrePackedConstantInitializers, "1"));
++  ASSERT_STATUS_OK(options.config_options.AddConfigEntry(kOrtSessionOptionsOptimizedModelExternalInitializersFileName,
++                                                         "weights.bin"));
++  ASSERT_STATUS_OK(
++      options.config_options.AddConfigEntry(kOrtSessionOptionsOptimizedModelExternalInitializersMinSizeInBytes, "0"));
++  InferenceSessionWrapper writer{options, GetEnvironment()};
++  const auto serialized = MakeModel(op).SerializeAsString();
++  ASSERT_STATUS_OK(writer.Load(serialized.data(), static_cast<int>(serialized.size())));
++  ASSERT_STATUS_OK(writer.Initialize());
++  const size_t expected_prepacks = op == "LSTM" ? 2 : 1;
++  ASSERT_EQ(writer.GetSessionState().GetNumberOfPrepacksCounter(), expected_prepacks);
++  const auto expected = RunStorageModel(writer, op == "LSTM", op == "MatMulIntegerToFloat");
++  const auto* production_info = writer.GetSessionState().GetKernelCreateInfoMap().begin()->second.get();
++  ONNX_NAMESPACE::ModelProto saved;
++  {
++    std::ifstream stream(model_path, std::ios::binary);
++    ASSERT_TRUE(saved.ParseFromIstream(&stream));
++  }
++
++  // Each reader uses the same production kernel with a test-only observer.
++  auto load = [&](ONNX_NAMESPACE::ModelProto model, bool enabled, bool protect, bool expect_hit,
++                  bool accepts_storage = true) {
++    {
++      std::ofstream stream(model_path, std::ios::binary);
++      ASSERT_TRUE(model.SerializeToOstream(&stream));
++    }
++    PackingCalls calls;
++    auto registry = std::make_shared<CustomRegistry>();
++    KernelCreateInfo info{std::make_unique<KernelDef>(*production_info->kernel_def),
++                          [&, protect, accepts_storage](FuncManager& manager, const OpKernelInfo& kernel_info,
++                                                        std::unique_ptr<OpKernel>& kernel) {
++                            std::unique_ptr<OpKernel> production;
++                            ORT_RETURN_IF_ERROR(production_info->kernel_create_func(manager, kernel_info, production));
++                            kernel = std::make_unique<ObservedKernel>(kernel_info, std::move(production), calls,
++                                                                      protect, accepts_storage);
++                            return Status::OK();
++                          }};
++    ASSERT_STATUS_OK(registry->RegisterCustomKernel(info));
++    SessionOptions reader_options;
++    reader_options.graph_optimization_level = TransformerLevel::Default;
++    reader_options.intra_op_param.thread_pool_size = 1;
++    reader_options.inter_op_param.thread_pool_size = 1;
++    reader_options.enable_cpu_mem_arena = false;
++    if (enabled)
++      ASSERT_STATUS_OK(reader_options.config_options.AddConfigEntry(
++          kOrtSessionOptionsUsePrePackedConstantInitializersWithoutRepack, "1"));
++    InferenceSessionWrapper reader{reader_options, GetEnvironment()};
++    ASSERT_STATUS_OK(reader.RegisterCustomRegistry(registry));
++    ASSERT_STATUS_OK(reader.Load(model_path));
++    ASSERT_STATUS_OK(reader.Initialize());
++    EXPECT_EQ(calls.prepack, expect_hit ? 0 : expected_prepacks);
++    if (expect_hit)
++      EXPECT_EQ(calls.allocations, 0U);
++    else
++      EXPECT_GT(calls.allocations, 0U);
++    EXPECT_EQ(reader.GetSessionState().GetUsedPrePackedWeightsFromStorageCounter(), expect_hit ? expected_prepacks : 0);
++    const auto actual = RunStorageModel(reader, op == "LSTM", op == "MatMulIntegerToFloat");
++    ASSERT_EQ(expected.size(), actual.size());
++    for (size_t i = 0; i < expected.size(); ++i) {
++      const auto& a = expected[i].Get<Tensor>();
++      const auto& b = actual[i].Get<Tensor>();
++      ASSERT_EQ(a.Shape(), b.Shape());
++      ASSERT_EQ(a.SizeInBytes(), b.SizeInBytes());
++      EXPECT_EQ(memcmp(a.DataRaw(), b.DataRaw(), a.SizeInBytes()), 0);
++    }
++  };
++  load(saved, false, false, false);
++  load(saved, true, true, true);
++  load(saved, true, false, false, false);
++  {
++    SessionOptions disabled;
++    disabled.graph_optimization_level = TransformerLevel::Default;
++    disabled.intra_op_param.thread_pool_size = 1;
++    disabled.inter_op_param.thread_pool_size = 1;
++    ASSERT_STATUS_OK(disabled.config_options.AddConfigEntry(kOrtSessionOptionsConfigDisablePrepacking, "1"));
++    ASSERT_STATUS_OK(
++        disabled.config_options.AddConfigEntry(kOrtSessionOptionsUsePrePackedConstantInitializersWithoutRepack, "1"));
++    InferenceSessionWrapper reader{disabled, GetEnvironment()};
++    ASSERT_STATUS_OK(reader.Load(model_path));
++    ASSERT_STATUS_OK(reader.Initialize());
++    EXPECT_EQ(reader.GetSessionState().GetUsedPrePackedWeightsFromStorageCounter(), 0U);
++  }
++  auto legacy = saved;
++  for (auto& tensor : *legacy.mutable_graph()->mutable_initializer()) {
++    auto* entries = tensor.mutable_external_data();
++    for (int i = entries->size() - 1; i >= 0; --i) {
++      if (entries->Get(i).key().rfind("prepacked_v2_", 0) == 0) entries->DeleteSubrange(i, 1);
++    }
++  }
++  load(legacy, true, false, false);
++  auto wrong_hash = saved;
++  for (auto& tensor : *wrong_hash.mutable_graph()->mutable_initializer()) {
++    for (auto& entry : *tensor.mutable_external_data()) {
++      if (entry.key().rfind("prepacked_", 0) != 0 || entry.key().rfind("prepacked_v2_", 0) == 0) continue;
++      entry.set_value("mismatched+hash" + entry.value().substr(entry.value().find('|')));
++    }
++  }
++  load(wrong_hash, true, false, false);
++  auto unaligned = saved;
++  for (auto& tensor : *unaligned.mutable_graph()->mutable_initializer()) {
++    for (auto& entry : *tensor.mutable_external_data()) {
++      if (entry.key().rfind("prepacked_", 0) != 0 || entry.key().rfind("prepacked_v2_", 0) == 0) continue;
++      auto value = entry.value();
++      const auto start = value.find('|') + 1;
++      const auto end = value.find(';', start);
++      const auto offset = std::stoll(value.substr(start, end - start));
++      ASSERT_GT(offset, 0);
++      value.replace(start, end - start, std::to_string(offset - 1));
++      entry.set_value(value);
++    }
++  }
++  load(unaligned, true, false, false);
++  load(unaligned, false, false, false);
++  // Fields: version, op, domain, since-version, name, input, dtype, rank, dimensions, format.
++  for (size_t field : {size_t{0}, size_t{1}, size_t{3}, size_t{4}, size_t{5}, size_t{6}, size_t{8},
++                       op == "LSTM" ? size_t{11} : size_t{10}}) {
++    auto mismatched = saved;
++    for (auto& tensor : *mismatched.mutable_graph()->mutable_initializer()) {
++      for (auto& entry : *tensor.mutable_external_data()) {
++        if (entry.key().rfind("prepacked_v2_", 0) != 0) continue;
++        const auto separator = entry.value().find(':');
++        std::string description;
++        for (size_t i = 0; i < separator; i += 2) {
++          description += static_cast<char>(std::stoul(entry.value().substr(i, 2), nullptr, 16));
++        }
++        size_t position = 0;
++        for (size_t i = 0; i <= field; ++i) {
++          const auto colon = description.find(':', position);
++          const auto length = std::stoul(description.substr(position, colon - position));
++          position = colon + 1;
++          if (i == field) break;
++          position += length;
++        }
++        // Corrupt one field without changing the blob key or the legacy record.
++        entry.mutable_value()->at(position * 2) = entry.value()[position * 2] == '0' ? '1' : '0';
++      }
++    }
++    SCOPED_TRACE(field);
++    load(mismatched, true, false, false);
++  }
++  auto malformed = saved;
++  for (auto& tensor : *malformed.mutable_graph()->mutable_initializer()) {
++    for (auto& entry : *tensor.mutable_external_data()) {
++      if (entry.key().rfind("prepacked_v2_", 0) == 0) entry.set_value("invalid metadata");
++    }
++  }
++  load(malformed, true, false, false);
++  auto short_blob = saved;
++  for (auto& tensor : *short_blob.mutable_graph()->mutable_initializer()) {
++    for (auto& entry : *tensor.mutable_external_data()) {
++      if (entry.key().rfind("prepacked_", 0) != 0 || entry.key().rfind("prepacked_v2_", 0) == 0) continue;
++      auto value = entry.value();
++      const auto start = value.find(';');
++      const auto end = value.find(';', start + 1);
++      ASSERT_NE(start, std::string::npos);
++      ASSERT_NE(end, std::string::npos);
++      value.replace(start + 1, end - start - 1, "1");
++      entry.set_value(value);
++    }
++  }
++  load(short_blob, true, false, false);
++  for (const char* invalid_range : {"-1;1;0", "not-a-number;1;0"}) {
++    auto invalid = saved;
++    for (auto& tensor : *invalid.mutable_graph()->mutable_initializer()) {
++      for (auto& entry : *tensor.mutable_external_data()) {
++        if (entry.key().rfind("prepacked_", 0) != 0 || entry.key().rfind("prepacked_v2_", 0) == 0) continue;
++        entry.set_value(entry.value().substr(0, entry.value().find('|') + 1) + invalid_range);
++      }
++    }
++    {
++      std::ofstream stream(model_path, std::ios::binary);
++      ASSERT_TRUE(invalid.SerializeToOstream(&stream));
++    }
++    SessionOptions invalid_options;
++    invalid_options.graph_optimization_level = TransformerLevel::Default;
++    invalid_options.intra_op_param.thread_pool_size = 1;
++    invalid_options.inter_op_param.thread_pool_size = 1;
++    ASSERT_STATUS_OK(invalid_options.config_options.AddConfigEntry(
++        kOrtSessionOptionsUsePrePackedConstantInitializersWithoutRepack, "1"));
++    InferenceSessionWrapper reader{invalid_options, GetEnvironment()};
++    auto status = reader.Load(model_path);
++    if (status.IsOK()) status = reader.Initialize();
++    EXPECT_FALSE(status.IsOK());
++  }
++}
++
++TEST_P(PrepackedFromStorageTest, ModelBytesAndExternalWeightsInMemory) {
++#if defined(_WIN32) || defined(DISABLE_EXTERNAL_INITIALIZERS)
++  GTEST_SKIP() << "Read-only mapping test requires POSIX external initializers";
++#else
++  const std::string op = GetParam();
++  if (!MlasGemmPackBFormat() ||
++      (op != "Gemm" && op != "GemmTransposed" && op != "LSTM" && !MlasGemmPackBFormat(false, true))) {
++    GTEST_SKIP() << "No serialized packing ABI for this platform";
++  }
++  TemporaryDirectory directory{ORT_TSTR("prepacked_from_memory_test")};
++  const auto model_path = directory.Path() + ORT_TSTR("/model.onnx");
++  const auto weights_path = directory.Path() + ORT_TSTR("/model.onnx.data");
++  SessionOptions options;
++  options.graph_optimization_level = TransformerLevel::Default;
++  options.intra_op_param.thread_pool_size = 1;
++  options.inter_op_param.thread_pool_size = 1;
++  options.optimized_model_filepath = model_path;
++  ASSERT_STATUS_OK(options.config_options.AddConfigEntry(kOrtSessionOptionsSavePrePackedConstantInitializers, "1"));
++  ASSERT_STATUS_OK(options.config_options.AddConfigEntry(kOrtSessionOptionsOptimizedModelExternalInitializersFileName,
++                                                         "model.onnx.data"));
++  // Leave the external initializer threshold at its default (1024 bytes).
++  InferenceSessionWrapper writer{options, GetEnvironment()};
++  const auto source_model = MakeModel(op, true).SerializeAsString();
++  ASSERT_STATUS_OK(writer.Load(source_model.data(), static_cast<int>(source_model.size())));
++  ASSERT_STATUS_OK(writer.Initialize());
++  ONNX_NAMESPACE::ModelProto saved;
++  {
++    std::ifstream stream(model_path, std::ios::binary);
++    ASSERT_TRUE(saved.ParseFromIstream(&stream));
++  }
++  std::string bytes;
++  {
++    std::ifstream stream(weights_path, std::ios::binary);
++    bytes.assign(std::istreambuf_iterator<char>(stream), {});
++  }
++  SessionOptions baseline_options;
++  baseline_options.graph_optimization_level = TransformerLevel::Default;
++  baseline_options.intra_op_param.thread_pool_size = 1;
++  baseline_options.inter_op_param.thread_pool_size = 1;
++  std::vector<OrtValue> expected;
++  {
++    InferenceSessionWrapper baseline{baseline_options, GetEnvironment()};
++    ASSERT_STATUS_OK(baseline.Load(model_path));
++    ASSERT_STATUS_OK(baseline.Initialize());
++    expected = RunStorageModel(baseline, op == "LSTM", op == "MatMulIntegerToFloat", true);
++  }
++  const auto* production_info = writer.GetSessionState().GetKernelCreateInfoMap().begin()->second.get();
++  int fd = -1;
++  ASSERT_STATUS_OK(Env::Default().FileOpenRd(weights_path, fd));
++  void* memory = mmap(nullptr, bytes.size(), PROT_READ, MAP_PRIVATE, fd, 0);
++  const auto close_status = Env::Default().FileClose(fd);
++  ASSERT_NE(memory, MAP_FAILED);
++  Env::MappedMemoryPtr mapped{static_cast<char*>(memory), [size = bytes.size()](void* p) { munmap(p, size); }};
++  ASSERT_STATUS_OK(close_status);
++  // All memory-backed readers must work without either model or weights on disk.
++  ASSERT_TRUE(std::filesystem::remove(weights_path));
++  ASSERT_TRUE(std::filesystem::remove(model_path));
++  auto read = [&](bool use_mmap, size_t shift, bool enabled, bool mismatch) {
++    SCOPED_TRACE(testing::Message() << "mmap=" << use_mmap << ", shift=" << shift << ", enabled=" << enabled
++                                    << ", mismatch=" << mismatch);
++    const bool expect_hit = enabled && !shift && !mismatch;
++    std::unique_ptr<void, decltype(&std::free)> allocation{nullptr, std::free};
++    if (!use_mmap) {
++      void* data = nullptr;
++      ASSERT_EQ(posix_memalign(&data, kAllocAlignment, bytes.size() + shift), 0);
++      allocation.reset(data);
++    }
++    char* buffer = use_mmap ? mapped.get() : static_cast<char*>(allocation.get()) + shift;
++    if (!use_mmap) memcpy(buffer, bytes.data(), bytes.size());
++    auto model = saved;
++    MemoryBindings bindings;
++    for (auto& tensor : *model.mutable_graph()->mutable_initializer()) {
++      if (tensor.data_location() != ONNX_NAMESPACE::TensorProto_DataLocation_EXTERNAL) continue;
++      std::unique_ptr<ExternalDataInfo> info;
++      ASSERT_STATUS_OK(ExternalDataInfo::Create(tensor.external_data(), info));
++      ASSERT_TRUE(info->HasPrepackedInfo());
++      const auto offset = info->GetOffset();
++      const auto length = info->GetLength();
++      bindings.sources[tensor.name()] = buffer + offset;
++      auto& packed = bindings.packed[tensor.name()];
++      for (const auto& [key, blobs] : info->TakePrepackedInfos()) {
++        ORT_UNUSED_PARAMETER(key);
++        for (const auto& blob : blobs) packed.push_back(buffer + std::get<0>(blob));
++      }
++      if (use_mmap) {
++        const auto page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
++        ASSERT_EQ(reinterpret_cast<uintptr_t>(buffer + offset) % page_size, 0U);
++        ASSERT_EQ(length % page_size, 0U);
++        // Protect source pages before Load/Initialize, not just before the kernel hook.
++        ASSERT_EQ(mprotect(buffer + offset, length, expect_hit ? PROT_NONE : PROT_READ), 0);
++      }
++      if (mismatch) {
++        for (auto& entry : *tensor.mutable_external_data()) {
++          if (entry.key().rfind("prepacked_v2_", 0) == 0) entry.mutable_value()->at(0) = '0';
++        }
++      }
++    }
++    PackingCalls calls;
++    auto registry = std::make_shared<CustomRegistry>();
++    KernelCreateInfo info{
++        std::make_unique<KernelDef>(*production_info->kernel_def),
++        [&](FuncManager& manager, const OpKernelInfo& kernel_info, std::unique_ptr<OpKernel>& kernel) {
++          std::unique_ptr<OpKernel> production;
++          ORT_RETURN_IF_ERROR(production_info->kernel_create_func(manager, kernel_info, production));
++          kernel = std::make_unique<ObservedKernel>(kernel_info, std::move(production), calls, false, true, &bindings);
++          return Status::OK();
++        }};
++    ASSERT_STATUS_OK(registry->RegisterCustomKernel(info));
++    SessionOptions reader_options;
++    reader_options.graph_optimization_level = TransformerLevel::Default;
++    reader_options.intra_op_param.thread_pool_size = 1;
++    reader_options.inter_op_param.thread_pool_size = 1;
++    reader_options.enable_cpu_mem_arena = false;
++    if (enabled)
++      ASSERT_STATUS_OK(reader_options.config_options.AddConfigEntry(
++          kOrtSessionOptionsUsePrePackedConstantInitializersWithoutRepack, "1"));
++    const std::vector<PathString> names{ORT_TSTR("model.onnx.data")};
++    std::vector<std::pair<char*, const size_t>> buffers{{buffer, bytes.size()}};
++    ASSERT_STATUS_OK(reader_options.AddExternalInitializersFromFilesInMemory(names, buffers));
++    InferenceSessionWrapper reader{reader_options, GetEnvironment()};
++    ASSERT_STATUS_OK(reader.RegisterCustomRegistry(registry));
++    const auto serialized = model.SerializeAsString();
++    ASSERT_STATUS_OK(reader.Load(serialized.data(), static_cast<int>(serialized.size())));
++    ASSERT_STATUS_OK(reader.Initialize());
++    const size_t weights = op == "LSTM" ? 2 : 1;
++    EXPECT_EQ(calls.prepack, expect_hit ? 0 : weights);
++    if (expect_hit)
++      EXPECT_EQ(calls.allocations, 0U);
++    else
++      EXPECT_GT(calls.allocations, 0U);
++    EXPECT_EQ(reader.GetSessionState().GetUsedPrePackedWeightsFromStorageCounter(), expect_hit ? weights : 0);
++    const auto actual = RunStorageModel(reader, op == "LSTM", op == "MatMulIntegerToFloat", true);
++    ASSERT_EQ(actual.size(), expected.size());
++    for (size_t i = 0; i < expected.size(); ++i) {
++      const auto& a = expected[i].Get<Tensor>();
++      const auto& b = actual[i].Get<Tensor>();
++      ASSERT_EQ(a.Shape(), b.Shape());
++      ASSERT_EQ(a.SizeInBytes(), b.SizeInBytes());
++      EXPECT_EQ(memcmp(a.DataRaw(), b.DataRaw(), a.SizeInBytes()), 0);
++    }
++  };
++  read(true, 0, true, false);
++  read(true, 0, false, false);
++  read(true, 0, true, true);
++  read(false, 0, true, false);
++  read(false, 0, false, false);
++  read(false, sizeof(float), true, false);
++  read(false, 0, true, true);
++  // Reject packed ranges before turning their offsets into pointers.
++  for (bool bad_length : {false, true}) {
++    auto invalid = saved;
++    for (auto& tensor : *invalid.mutable_graph()->mutable_initializer()) {
++      for (auto& entry : *tensor.mutable_external_data()) {
++        if (entry.key().rfind("prepacked_", 0) != 0 || entry.key().rfind("prepacked_v2_", 0) == 0) continue;
++        auto value = entry.value();
++        const auto offset_start = value.find('|') + 1;
++        const auto separator = value.find(';', offset_start);
++        const auto end = value.find(';', separator + 1);
++        if (bad_length)
++          value.replace(separator + 1, end - separator - 1, std::to_string(bytes.size() + 1));
++        else
++          value.replace(offset_start, separator - offset_start, std::to_string(bytes.size() + 1));
++        entry.set_value(value);
++      }
++    }
++    SessionOptions invalid_options = baseline_options;
++    const std::vector<PathString> names{ORT_TSTR("model.onnx.data")};
++    std::vector<std::pair<char*, const size_t>> buffers{{mapped.get(), bytes.size()}};
++    ASSERT_STATUS_OK(invalid_options.AddExternalInitializersFromFilesInMemory(names, buffers));
++    InferenceSessionWrapper reader{invalid_options, GetEnvironment()};
++    const auto data = invalid.SerializeAsString();
++    auto status = reader.Load(data.data(), static_cast<int>(data.size()));
++    if (status.IsOK()) status = reader.Initialize();
++    ASSERT_FALSE(status.IsOK());
++    EXPECT_NE(status.ErrorMessage().find("Pre-packed blob"), std::string::npos);
++    EXPECT_NE(status.ErrorMessage().find("out of bounds"), std::string::npos);
++  }
++  // Missing files and a missing table entry must return a diagnostic Status.
++  const auto serialized = saved.SerializeAsString();
++  for (bool wrong_entry : {false, true}) {
++    SessionOptions missing_options = baseline_options;
++    ASSERT_STATUS_OK(missing_options.config_options.AddConfigEntry(
++        kOrtSessionOptionsUsePrePackedConstantInitializersWithoutRepack, "1"));
++    if (wrong_entry) {
++      const std::vector<PathString> names{ORT_TSTR("other.data")};
++      std::vector<std::pair<char*, const size_t>> buffers{{mapped.get(), bytes.size()}};
++      ASSERT_STATUS_OK(missing_options.AddExternalInitializersFromFilesInMemory(names, buffers));
++    }
++    InferenceSessionWrapper reader{missing_options, GetEnvironment()};
++    auto status = reader.Load(serialized.data(), static_cast<int>(serialized.size()));
++    if (status.IsOK()) status = reader.Initialize();
++    ASSERT_FALSE(status.IsOK());
++    EXPECT_NE(status.ErrorMessage().find("model.onnx.data"), std::string::npos);
++    EXPECT_EQ(status.ErrorMessage().find("filesystem error"), std::string::npos);
++  }
++#endif
++}
++
++TEST(PrepackedFromStorageOptimizerTest, BasicAndExtendedReadMemoryTaggedWeights) {
++#if defined(DISABLE_EXTERNAL_INITIALIZERS)
++  GTEST_SKIP();
++#else
++  TemporaryDirectory directory{ORT_TSTR("prepacked_optimizer_test")};
++  const auto model_path = directory.Path() + ORT_TSTR("/model.onnx");
++  const auto weights_path = directory.Path() + ORT_TSTR("/model.onnx.data");
++  auto model = MakeModel("MatMul", true);
++  auto& graph = *model.mutable_graph();
++  auto& b = *graph.mutable_initializer(0);
++  b.set_dims(1, 4);
++  b.mutable_raw_data()->resize(256 * 4 * sizeof(float));
++  graph.mutable_output(0)->mutable_type()->mutable_tensor_type()->mutable_shape()->mutable_dim(1)->set_dim_value(4);
++  graph.mutable_node(0)->set_output(0, "before_bn");
++  auto* bn = graph.add_node();
++  bn->set_name("batch_norm");
++  bn->set_op_type("BatchNormalization");
++  bn->add_input("before_bn");
++  bn->add_output("Y");
++  auto* epsilon = bn->add_attribute();
++  epsilon->set_name("epsilon");
++  epsilon->set_type(ONNX_NAMESPACE::AttributeProto_AttributeType_FLOAT);
++  epsilon->set_f(0.f);
++  for (const char* name : {"scale", "bias", "mean", "variance"}) {
++    auto* initializer = graph.add_initializer();
++    initializer->set_name(name);
++    initializer->set_data_type(ONNX_NAMESPACE::TensorProto_DataType_FLOAT);
++    initializer->add_dims(4);
++    const float value = std::string(name) == "scale" || std::string(name) == "variance" ? 1.f : 0.f;
++    for (int i = 0; i < 4; ++i) initializer->add_float_data(value);
++    bn->add_input(name);
++  }
++  SessionOptions options;
++  options.graph_optimization_level = TransformerLevel::Default;
++  options.intra_op_param.thread_pool_size = 1;
++  options.inter_op_param.thread_pool_size = 1;
++  options.optimized_model_filepath = model_path;
++  ASSERT_STATUS_OK(options.config_options.AddConfigEntry(kOrtSessionOptionsSavePrePackedConstantInitializers, "1"));
++  ASSERT_STATUS_OK(options.config_options.AddConfigEntry(kOrtSessionOptionsOptimizedModelExternalInitializersFileName,
++                                                         "model.onnx.data"));
++  const auto source = model.SerializeAsString();
++  InferenceSessionWrapper writer{options, GetEnvironment()};
++  ASSERT_STATUS_OK(writer.Load(source.data(), static_cast<int>(source.size())));
++  ASSERT_STATUS_OK(writer.Initialize());
++  const auto expected = RunStorageModel(writer, false, false, true);
++  ONNX_NAMESPACE::ModelProto saved;
++  {
++    std::ifstream stream(model_path, std::ios::binary);
++    ASSERT_TRUE(saved.ParseFromIstream(&stream));
++  }
++  bool has_packed_b = false;
++  for (const auto& initializer : saved.graph().initializer()) {
++    if (initializer.name() != "B") continue;
++    std::unique_ptr<ExternalDataInfo> info;
++    ASSERT_STATUS_OK(ExternalDataInfo::Create(initializer.external_data(), info));
++    has_packed_b = info->HasPrepackedInfo();
++  }
++  ASSERT_TRUE(has_packed_b);
++  std::string weights;
++  {
++    std::ifstream stream(weights_path, std::ios::binary);
++    weights.assign(std::istreambuf_iterator<char>(stream), {});
++  }
++  ASSERT_TRUE(std::filesystem::remove(model_path));
++  ASSERT_TRUE(std::filesystem::remove(weights_path));
++  const auto data = saved.SerializeAsString();
++  for (auto level : {TransformerLevel::Level1, TransformerLevel::Level2}) {
++    SCOPED_TRACE(static_cast<int>(level));
++    SessionOptions reader_options;
++    reader_options.graph_optimization_level = level;
++    reader_options.intra_op_param.thread_pool_size = 1;
++    reader_options.inter_op_param.thread_pool_size = 1;
++    ASSERT_STATUS_OK(reader_options.config_options.AddConfigEntry(
++        kOrtSessionOptionsUsePrePackedConstantInitializersWithoutRepack, "1"));
++    const std::vector<PathString> names{ORT_TSTR("model.onnx.data")};
++    std::vector<std::pair<char*, const size_t>> buffers{{weights.data(), weights.size()}};
++    ASSERT_STATUS_OK(reader_options.AddExternalInitializersFromFilesInMemory(names, buffers));
++    InferenceSessionWrapper reader{reader_options, GetEnvironment()};
++    ASSERT_STATUS_OK(reader.Load(data.data(), static_cast<int>(data.size())));
++    ASSERT_TRUE(reader.GetGraph().ModelPath().empty());
++    ASSERT_STATUS_OK(reader.Initialize());
++    bool has_gemm = false;
++    for (const auto& node : reader.GetGraph().Nodes()) {
++      EXPECT_NE(node.OpType(), "BatchNormalization");
++      has_gemm |= node.OpType() == "Gemm" || node.OpType() == "FusedGemm";
++    }
++    EXPECT_TRUE(has_gemm);
++    const auto actual = RunStorageModel(reader, false, false, true);
++    const auto& a = expected[0].Get<Tensor>();
++    const auto& result = actual[0].Get<Tensor>();
++    ASSERT_EQ(a.Shape(), result.Shape());
++    ASSERT_EQ(a.SizeInBytes(), result.SizeInBytes());
++    EXPECT_EQ(memcmp(a.DataRaw(), result.DataRaw(), a.SizeInBytes()), 0);
++  }
++#endif
++}
++
++TEST(PrepackedFromStorageSharingTest, CallerOwnedBuffersStayInTheirGraph) {
++  for (bool saving : {false, true}) {
++    SCOPED_TRACE(saving);
++    PrepackedKeyToBlobMap blobs;
++    PrepackedWeightsForGraph graph{blobs, saving};
++    char memory[64]{};
++    PrePackedWeights borrowed;
++    borrowed.buffers_owned_externally_ = true;
++    borrowed.buffers_.emplace_back(memory, [](void*) {});
++    borrowed.buffer_sizes_.push_back(sizeof(memory));
++    graph.InsertPrepackedWeights("key", std::move(borrowed));
++    auto reference = graph.GetPrepackedWeights("key")->CreateReferringCopy();
++    EXPECT_TRUE(reference.buffers_owned_externally_);
++    PrepackedWeightsContainer shared;
++    EXPECT_FALSE(shared.WriteWeight("key", std::move(reference)));
++    EXPECT_EQ(shared.GetNumberOfElements(), 0U);
++    EXPECT_EQ(reference.buffers_[0].get(), memory);
++    PrePackedWeights regenerated;
++    regenerated.buffers_.push_back(
++        IAllocator::MakeUniquePtr<void>(std::make_shared<CPUAllocator>(), sizeof(memory), true));
++    regenerated.buffer_sizes_.push_back(sizeof(memory));
++    EXPECT_FALSE(graph.ReplaceWithReferenceIfSaving("B", "key", regenerated).has_value());
++    ASSERT_NE(graph.GetPrepackedWeights("key"), nullptr);
++    EXPECT_EQ(graph.GetPrepackedWeights("key")->buffers_[0].get(), memory);
++    EXPECT_EQ(graph.GetKeysForWeightForSaving("B") != nullptr, saving);
++    ASSERT_TRUE(shared.WriteWeight("key", std::move(regenerated)));
++    EXPECT_NE(shared.GetWeight("key").buffers_[0].get(), memory);
++    EXPECT_FALSE(shared.GetWeight("key").buffers_owned_externally_);
++  }
++}
++
++TEST(PrepackedFromStorageSharingTest, SharedContainerOutlivesUserMemory) {
++#if defined(_WIN32) || defined(DISABLE_EXTERNAL_INITIALIZERS)
++  GTEST_SKIP();
++#else
++  TemporaryDirectory directory{ORT_TSTR("prepacked_sharing_test")};
++  const auto model_path = directory.Path() + ORT_TSTR("/model.onnx");
++  const auto weights_path = directory.Path() + ORT_TSTR("/model.onnx.data");
++  auto model = MakeModel("Gemm", true);
++  auto& graph = *model.mutable_graph();
++  auto* other_b = graph.add_initializer();
++  *other_b = graph.initializer(0);
++  other_b->set_name("B_shared");
++  // Avoid initializer deduplication; AddInitializer will override this value in the readers.
++  other_b->mutable_raw_data()->assign(other_b->raw_data().size(), '\0');
++  auto* other_node = graph.add_node();
++  *other_node = graph.node(0);
++  other_node->set_name("shared_node");
++  other_node->set_input(1, "B_shared");
++  other_node->set_output(0, "Y_shared");
++  auto* other_output = graph.add_output();
++  *other_output = graph.output(0);
++  other_output->set_name("Y_shared");
++  std::vector<float> shared_values(graph.initializer(0).raw_data().size() / sizeof(float));
++  memcpy(shared_values.data(), graph.initializer(0).raw_data().data(), graph.initializer(0).raw_data().size());
++  OrtValue shared_initializer;
++  Tensor shared_tensor{DataTypeImpl::GetType<float>(), TensorShape({256, 256}), shared_values.data(),
++                       OrtMemoryInfo(CPU, OrtDeviceAllocator)};
++  Tensor::InitOrtValue(std::move(shared_tensor), shared_initializer);
++  SessionOptions options;
++  options.graph_optimization_level = TransformerLevel::Default;
++  options.intra_op_param.thread_pool_size = 1;
++  options.inter_op_param.thread_pool_size = 1;
++  options.optimized_model_filepath = model_path;
++  ASSERT_STATUS_OK(options.config_options.AddConfigEntry(kOrtSessionOptionsSavePrePackedConstantInitializers, "1"));
++  ASSERT_STATUS_OK(options.config_options.AddConfigEntry(kOrtSessionOptionsOptimizedModelExternalInitializersFileName,
++                                                         "model.onnx.data"));
++  const auto source = model.SerializeAsString();
++  InferenceSessionWrapper writer{options, GetEnvironment()};
++  ASSERT_STATUS_OK(writer.Load(source.data(), static_cast<int>(source.size())));
++  ASSERT_STATUS_OK(writer.Initialize());
++  const auto expected = RunStorageModel(writer, false, false, true);
++  std::string data, weights;
++  {
++    std::ifstream stream(model_path, std::ios::binary);
++    data.assign(std::istreambuf_iterator<char>(stream), {});
++  }
++  {
++    std::ifstream stream(weights_path, std::ios::binary);
++    weights.assign(std::istreambuf_iterator<char>(stream), {});
++  }
++  ASSERT_TRUE(std::filesystem::remove(model_path));
++  ASSERT_TRUE(std::filesystem::remove(weights_path));
++  auto allocate_buffer = [&]() -> Env::MappedMemoryPtr {
++    void* memory = mmap(nullptr, weights.size(), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++    ORT_ENFORCE(memory != MAP_FAILED);
++    Env::MappedMemoryPtr buffer{static_cast<char*>(memory), [size = weights.size()](void* p) { munmap(p, size); }};
++    memcpy(memory, weights.data(), weights.size());
++    ORT_ENFORCE(mprotect(memory, weights.size(), PROT_READ) == 0);
++    return buffer;
++  };
++  for (bool enabled : {false, true}) {
++    SCOPED_TRACE(enabled);
++    PrepackedWeightsContainer container;
++    auto first_buffer = allocate_buffer();
++    auto read = [&](char* buffer, bool cached) {
++      SessionOptions reader_options;
++      reader_options.graph_optimization_level = TransformerLevel::Default;
++      reader_options.intra_op_param.thread_pool_size = 1;
++      reader_options.inter_op_param.thread_pool_size = 1;
++      ASSERT_STATUS_OK(reader_options.config_options.AddConfigEntry(
++          kOrtSessionOptionsUsePrePackedConstantInitializersWithoutRepack, enabled ? "1" : "0"));
++      ASSERT_STATUS_OK(reader_options.AddInitializer("B_shared", &shared_initializer));
++      const std::vector<PathString> names{ORT_TSTR("model.onnx.data")};
++      std::vector<std::pair<char*, const size_t>> buffers{{buffer, weights.size()}};
++      ASSERT_STATUS_OK(reader_options.AddExternalInitializersFromFilesInMemory(names, buffers));
++      InferenceSessionWrapper reader{reader_options, GetEnvironment()};
++      ASSERT_STATUS_OK(reader.AddPrePackedWeightsContainer(&container));
++      ASSERT_STATUS_OK(reader.Load(data.data(), static_cast<int>(data.size())));
++      ASSERT_STATUS_OK(reader.Initialize());
++      EXPECT_EQ(reader.GetSessionState().GetUsedSharedPrePackedWeightCounter(), cached ? 1U : 0U);
++      const auto actual = RunStorageModel(reader, false, false, true, true);
++      ASSERT_EQ(actual.size(), 2U);
++      const auto& a = expected[0].Get<Tensor>();
++      for (const auto& output : actual) {
++        const auto& result = output.Get<Tensor>();
++        ASSERT_EQ(a.Shape(), result.Shape());
++        ASSERT_EQ(a.SizeInBytes(), result.SizeInBytes());
++        EXPECT_EQ(memcmp(a.DataRaw(), result.DataRaw(), a.SizeInBytes()), 0);
++      }
++      ASSERT_EQ(container.GetNumberOfElements(), 1U);
++      for (const auto& [key, packed] : container.prepacked_weights_map_) {
++        ORT_UNUSED_PARAMETER(key);
++        EXPECT_FALSE(packed.buffers_owned_externally_);
++        for (const auto& owned : packed.buffers_) {
++          const auto address = reinterpret_cast<uintptr_t>(owned.get());
++          const auto start = reinterpret_cast<uintptr_t>(buffer);
++          ASSERT_TRUE(address < start || address >= start + weights.size());
++        }
++      }
++    };
++    read(first_buffer.get(), false);
++    // Keep the old addresses reserved and inaccessible so stale pointers cannot pass by address reuse.
++    ASSERT_EQ(mprotect(first_buffer.get(), weights.size(), PROT_NONE), 0);
++    auto second_buffer = allocate_buffer();
++    read(second_buffer.get(), true);
++  }
++#endif
++}
++
++INSTANTIATE_TEST_SUITE_P(Cpu, PrepackedFromStorageTest,
++                         testing::Values("Gemm", "GemmTransposed", "LSTM"
++#ifndef DISABLE_CONTRIB_OPS
++                                         ,
++                                         "DynamicQuantizeMatMul", "MatMulIntegerToFloat"
++#endif
++                                         ),
++                         [](const testing::TestParamInfo<const char*>& info) { return info.param; });
++#endif
++}  // namespace onnxruntime::test
+diff --git a/onnxruntime/test/framework/tensorutils_test.cc b/onnxruntime/test/framework/tensorutils_test.cc
+index 931a507c53155859c1c85965c7594f08632d206e..84368a6c7669f778bdf7cc8647104263ac0773e5 100644
+--- a/onnxruntime/test/framework/tensorutils_test.cc
++++ b/onnxruntime/test/framework/tensorutils_test.cc
+@@ -154,7 +154,9 @@ TEST(TensorProtoUtilsTest, SetExternalDataInformation) {
+   int64_t final_offset = starting_offset;
+   for (const auto& blob_info : prepacked_infos[blob_key]) {
+     int64_t offset = std::get<0>(blob_info);
+-    ASSERT_EQ(offset, final_offset);
++    // Each blob starts at the allocator alignment.
++    constexpr int64_t alignment = kAllocAlignment;
++    ASSERT_EQ(offset, (final_offset + alignment - 1) / alignment * alignment);
+     size_t length = std::get<1>(blob_info);
+     std::string checksum = std::get<2>(blob_info);  // currently "0"
+     final_offset = offset + length;
+diff --git a/onnxruntime/test/optimizer/initializer_test.cc b/onnxruntime/test/optimizer/initializer_test.cc
+index 391942acfca35123a17d834ae0e150b331ff70e0..118bed7328b1c5693cd741497297ee5ab88b54d5 100644
+--- a/onnxruntime/test/optimizer/initializer_test.cc
++++ b/onnxruntime/test/optimizer/initializer_test.cc
+@@ -96,7 +96,7 @@ TEST(OptimizerInitializerTest, LoadExternalData) {
+ 
+   // bad model paths
+   EXPECT_THROW(Initializer i(tensor_proto_base, std::filesystem::path()), OnnxRuntimeException);
+-  EXPECT_THROW(Initializer i(tensor_proto_base, ORT_TSTR("invalid/directory")), std::filesystem::filesystem_error);
++  EXPECT_THROW(Initializer i(tensor_proto_base, ORT_TSTR("invalid/directory")), OnnxRuntimeException);
+ 
+   // bad length
+   {

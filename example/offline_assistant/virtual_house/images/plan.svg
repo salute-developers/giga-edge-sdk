@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="430" viewBox="0 0 760 430" role="img" aria-labelledby="title">
+  <title id="title">The plan of the lake house: x runs to the right, z towards the viewer; the tall walls are at the back and on the left</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#59636e"/></marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#bc4c00"/></marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .room{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .wall{fill:none;stroke:#1f2328;stroke-width:5;stroke-linecap:square}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .evedge{fill:none;stroke:#bc4c00;stroke-width:1.5;marker-end:url(#ao)}
+    .ev{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .orange{fill:#bc4c00}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="429" rx="12"/>
+
+  <rect class="room" x="99" y="65" width="156" height="138" rx="6"/>
+  <text class="b mid" x="177" y="132">Кухня</text>
+  <text class="note mid" x="177" y="150">7 devices</text>
+  <rect class="room" x="261" y="65" width="102" height="138" rx="6"/>
+  <text class="b mid" x="312" y="132">Ванная</text>
+  <text class="note mid" x="312" y="150">4 devices</text>
+  <rect class="room" x="369" y="65" width="156" height="138" rx="6"/>
+  <text class="b mid" x="447" y="132">Спальня</text>
+  <text class="note mid" x="447" y="150">6 devices</text>
+  <rect class="room" x="531" y="65" width="138" height="138" rx="6"/>
+  <text class="b mid" x="600" y="132">Гараж</text>
+  <text class="note mid" x="600" y="150">5 devices</text>
+  <rect class="room" x="99" y="209" width="192" height="138" rx="6"/>
+  <text class="b mid" x="195" y="276">Гостиная</text>
+  <text class="note mid" x="195" y="294">7 devices</text>
+  <rect class="room" x="297" y="209" width="102" height="138" rx="6"/>
+  <text class="b mid" x="348" y="276">Прихожая</text>
+  <text class="note mid" x="348" y="294">3 devices</text>
+  <rect class="room" x="405" y="209" width="120" height="138" rx="6"/>
+  <text class="b mid" x="465" y="276">Кабинет</text>
+  <text class="note mid" x="465" y="294">4 devices</text>
+  <rect class="room" x="531" y="209" width="138" height="138" rx="6"/>
+  <text class="b mid" x="600" y="276">Детская</text>
+  <text class="note mid" x="600" y="294">3 devices</text>
+
+  <path class="wall" d="M93 350V59H672"/>
+  <text class="note" x="96" y="48">tall walls: the back and the left</text>
+  <text class="note end" x="672" y="48">between rooms: low partitions with doorways</text>
+
+  <path class="edge" d="M96 376H186"/>
+  <text class="mono small" x="192" y="380">x</text>
+  <path class="edge" d="M70 62V152"/>
+  <text class="mono small mid" x="70" y="166">z</text>
+  <text class="mono small end" x="86" y="380">-8, 4</text>
+  <text class="mono small" x="680" y="66">8, -4</text>
+
+  <circle class="ev" cx="502.8" cy="69.2" r="6"/>
+  <path class="evedge" d="M502.8 76.2v24"/>
+  <text class="mono small orange" x="512.8" y="95.2">facing: +z</text>
+  <circle class="ev" cx="100.68" cy="227.6" r="6"/>
+  <path class="evedge" d="M107.68 227.6h24"/>
+  <text class="mono small orange" x="136.68" y="231.6">facing: +x</text>
+
+  <path class="edge" d="M438 408V364"/>
+  <text class="note mid" x="438" y="426">the viewer: the page opens looking from here</text>
+</svg>

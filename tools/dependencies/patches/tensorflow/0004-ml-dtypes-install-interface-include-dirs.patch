@@ -1,0 +1,29 @@
+tensorflow/lite: ml_dtypes in the installed package without source paths and not in the root of include/.
+
+In TF 2.20 the ml_dtypes target is exported with absolute paths to the ml_dtypes sources in
+INTERFACE_INCLUDE_DIRECTORIES, so a consumer of the installed tflite without that directory fails in
+find_package. Backport of the later tflite: sources only in BUILD_INTERFACE, include/ when installed. The
+ml_dtypes headers go to include/ml_dtypes/include/, the way TF includes them.
+
+--- a/tensorflow/lite/tools/cmake/modules/ml_dtypes/CMakeLists.txt
++++ b/tensorflow/lite/tools/cmake/modules/ml_dtypes/CMakeLists.txt
+@@ -24,8 +24,9 @@
+ 
+ add_library(ml_dtypes INTERFACE)
+ target_include_directories(ml_dtypes INTERFACE
+-  "${ML_DTYPES_SOURCE_DIR}"
+-  "${ML_DTYPES_SOURCE_DIR}/ml_dtypes")
++  "$<BUILD_INTERFACE:${ML_DTYPES_SOURCE_DIR}>"
++  "$<BUILD_INTERFACE:${ML_DTYPES_SOURCE_DIR}/ml_dtypes>"
++  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+ file(GLOB ML_DTYPES_PUBLIC_HEADERS
+   ${ML_DTYPES_SOURCE_DIR}/ml_dtypes/include/*.h)
+ set_target_properties(ml_dtypes PROPERTIES
+@@ -37,6 +38,6 @@
+     EXPORT tensorflow-liteTargets
+     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
++    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ml_dtypes/include
+   )
+ endif()

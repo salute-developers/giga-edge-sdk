@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="344" viewBox="0 0 760 344" role="img" aria-labelledby="title">
+  <title id="title">The four adapter nodes in a graph: ha_catalog and ha_scene show the house to the model, ha_action_resolver turns a call of the model into a Home Assistant tool call, ha_tool_result turns the reply into a result for the model</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#8250df"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:11px}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .other{fill:#f6f8fa;stroke:#8c959f}
+    .ha{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .purple{fill:#8250df}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .rec{fill:none;stroke:#8250df;stroke-width:1.5;stroke-dasharray:6 4;marker-end:url(#ar)}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="343" rx="12"/>
+
+  <rect class="other" x="24" y="30" width="110" height="254" rx="10"/>
+  <text class="b mid" x="79" y="150">dialogue</text>
+  <text class="b mid" x="79" y="168">nodes</text>
+  <text class="b mid" x="79" y="186">and the LLM</text>
+
+  <rect class="ha" x="640" y="30" width="96" height="254" rx="10"/>
+  <text class="b mid" x="688" y="150">Home</text>
+  <text class="b mid" x="688" y="168">Assistant</text>
+  <text class="note small mid" x="688" y="188">MCP server</text>
+
+  <text class="note small" x="160" y="26">the house for the model</text>
+  <rect class="other" x="470" y="40" width="150" height="36" rx="8"/>
+  <text class="mono mid" x="545" y="62">mcp_catalog_snapshot</text>
+  <rect class="node" x="330" y="40" width="96" height="36" rx="8"/>
+  <text class="mono b mid" x="378" y="62">ha_catalog</text>
+  <rect class="node" x="200" y="40" width="86" height="36" rx="8"/>
+  <text class="mono b mid" x="243" y="62">ha_scene</text>
+  <path class="edge" d="M640 58H628"/>
+  <path class="edge" d="M470 58H434"/>
+  <path class="edge" d="M330 58H294"/>
+  <path class="edge" d="M200 58H142"/>
+
+  <text class="note small" x="160" y="130">the call of the model</text>
+  <rect class="node" x="210" y="140" width="150" height="36" rx="8"/>
+  <text class="mono b mid" x="285" y="162">ha_action_resolver</text>
+  <rect class="other" x="430" y="140" width="150" height="36" rx="8"/>
+  <text class="mono mid" x="505" y="162">mcp_action_executor</text>
+  <path class="edge" d="M134 158H202"/>
+  <path class="edge" d="M360 158H422"/>
+  <path class="edge" d="M580 158H632"/>
+
+  <text class="note small" x="160" y="296">the result for the model</text>
+  <rect class="other" x="466" y="240" width="154" height="36" rx="8"/>
+  <text class="mono mid" x="543" y="262">mcp_completion_pickup</text>
+  <rect class="node" x="322" y="240" width="116" height="36" rx="8"/>
+  <text class="mono b mid" x="380" y="262">ha_tool_result</text>
+  <rect class="other" x="176" y="240" width="116" height="36" rx="8"/>
+  <text class="mono mid" x="234" y="262">fc_tool_result</text>
+  <path class="edge" d="M640 258H628"/>
+  <path class="edge" d="M466 258H446"/>
+  <path class="edge" d="M322 258H300"/>
+  <path class="edge" d="M176 258H142"/>
+
+  <path class="edge" d="M378 76V108H310V132"/>
+  <text class="note small" x="386" y="100">the catalog</text>
+  <path class="rec" d="M380 240V208H260V184"/>
+  <text class="note small purple" x="388" y="222">a write after its read</text>
+
+  <text class="note mid" x="380" y="326">Blue nodes belong to this module; grey ones come from the mcp, function_calling, assistant_core and llm modules.</text>
+</svg>

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="316" viewBox="0 0 760 316" role="img" aria-labelledby="title">
+  <title id="title">A scene is an entity and a script is a tool of Home Assistant; the model sees both as a device named «Сценарий …» and runs them by HassTurnOn and by the tool of the script</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#59636e"/></marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#bc4c00"/></marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .evedge{fill:none;stroke:#bc4c00;stroke-width:1.5;marker-end:url(#ao)}
+    .orange{fill:#bc4c00}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="315" rx="12"/>
+
+  <rect class="host" x="24" y="56" width="240" height="184" rx="8"/>
+  <text class="b mid" x="144" y="80">Home Assistant</text>
+  <text class="note mid" x="144" y="98">or house.py in its place</text>
+  <rect class="val" x="40" y="118" width="208" height="30" rx="6"/>
+  <text class="small mid" x="144" y="137">scene «Спокойной ночи»</text>
+  <rect class="val" x="40" y="186" width="208" height="30" rx="6"/>
+  <text class="small mid" x="144" y="205">script «Доброе утро»</text>
+
+  <rect class="host" x="496" y="56" width="240" height="184" rx="8"/>
+  <text class="b mid" x="616" y="80">the model</text>
+  <text class="note mid" x="616" y="98">sees two devices to switch on</text>
+  <rect class="node" x="512" y="118" width="208" height="30" rx="6"/>
+  <text class="small mid" x="616" y="137">«Сценарий Спокойной ночи»</text>
+  <rect class="node" x="512" y="186" width="208" height="30" rx="6"/>
+  <text class="small mid" x="616" y="205">«Сценарий Доброе утро»</text>
+
+  <path class="edge" d="M264 126H494"/>
+  <text class="small mid" x="380" y="119">an entity of the context</text>
+  <path class="evedge" d="M496 142H266"/>
+  <text class="mono small mid orange" x="380" y="158">intent__HassTurnOn</text>
+
+  <path class="edge" d="M264 194H494"/>
+  <text class="small mid" x="380" y="187">a tool with the name in its title</text>
+  <path class="evedge" d="M496 210H266"/>
+  <text class="mono small mid orange" x="380" y="226">script__good_morning</text>
+
+  <path class="edge" d="M616 30V54"/>
+  <text class="note" x="606" y="40" style="text-anchor:end">«включи сценарий спокойной ночи»</text>
+
+  <text class="note mid" x="380" y="268">The word «Сценарий» comes from the config (scenario_prefix): with it the model finds a scenario by its name.</text>
+  <text class="note mid" x="380" y="286">Switching off: a scene has nothing to switch off, a script is stopped by HassTurnOff.</text>
+</svg>

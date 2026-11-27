@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 01/12] build: build the unified app only with tools and server
+
+The unified llama binary links the tools and the server, so LLAMA_BUILD_APP
+alone broke builds that turn them off.
+---
+ CMakeLists.txt | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3086e81b19724f430840914289a851ac4439e2b7..e148ea587d45a2d0b1566188549edba94fa9c54e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -254,7 +254,8 @@ if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS)
+     add_subdirectory(tools)
+ endif()
+ 
+-if (LLAMA_BUILD_APP)
++# the unified binary links the tools and the server, so it needs both
++if (LLAMA_BUILD_APP AND LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS AND LLAMA_BUILD_SERVER)
+     add_subdirectory(app)
+ endif()
+ 

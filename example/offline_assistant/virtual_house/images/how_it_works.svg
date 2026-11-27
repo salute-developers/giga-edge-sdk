@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="330" viewBox="0 0 760 330" role="img" aria-labelledby="title">
+  <title id="title">The page talks to house.py; house.py passes a request to the assistant and answers its MCP calls as Home Assistant would</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#59636e"/></marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1a7f37"/></marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#bc4c00"/></marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .vedge{fill:none;stroke:#1a7f37;stroke-width:1.5;marker-end:url(#ag)}
+    .evedge{fill:none;stroke:#bc4c00;stroke-width:1.5;marker-end:url(#ao)}
+    .green{fill:#1a7f37}
+    .orange{fill:#bc4c00}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="329" rx="12"/>
+
+  <rect class="host" x="24" y="56" width="168" height="196" rx="8"/>
+  <text class="b mid" x="108" y="80">the page</text>
+  <text class="note mid" x="108" y="98">browser</text>
+  <rect class="val" x="40" y="114" width="136" height="30" rx="6"/>
+  <text class="small mid" x="108" y="133">3D house</text>
+  <rect class="val" x="40" y="154" width="136" height="30" rx="6"/>
+  <text class="small mid" x="108" y="173">devices, manual controls</text>
+  <rect class="val" x="40" y="194" width="136" height="30" rx="6"/>
+  <text class="small mid" x="108" y="213">dialogue</text>
+
+  <rect class="host" x="296" y="56" width="168" height="196" rx="8"/>
+  <text class="mono b mid" x="380" y="80">house.py</text>
+  <text class="note mid" x="380" y="98">the virtual house</text>
+  <rect class="node" x="312" y="114" width="136" height="30" rx="6"/>
+  <text class="small mid" x="380" y="133">state of the devices</text>
+  <rect class="node" x="312" y="154" width="136" height="30" rx="6"/>
+  <text class="mono small mid" x="380" y="173">/api/mcp/assist</text>
+  <rect class="node" x="312" y="194" width="136" height="30" rx="6"/>
+  <text class="small mid" x="380" y="213">assistant process</text>
+
+  <rect class="host" x="568" y="56" width="168" height="196" rx="8"/>
+  <text class="mono b mid" x="652" y="80" style="font-size:12px">offline_assistant_demo</text>
+  <text class="note mid" x="652" y="98">the SDK graph</text>
+  <rect class="node" x="584" y="114" width="136" height="30" rx="6"/>
+  <text class="small mid" x="652" y="133">hotword, speech to text</text>
+  <rect class="node" x="584" y="154" width="136" height="30" rx="6"/>
+  <text class="small mid" x="652" y="173">LLM with tool calls</text>
+  <rect class="node" x="584" y="194" width="136" height="30" rx="6"/>
+  <text class="mono small mid" x="652" y="213">smart_home_ha</text>
+
+  <path class="vedge" d="M296 129H194"/>
+  <text class="small mid green" x="244" y="122">values, calls,</text>
+  <text class="small mid green" x="244" y="145">answers</text>
+  <path class="edge" d="M192 209H294"/>
+  <text class="small mid" x="244" y="202">request,</text>
+  <text class="small mid" x="244" y="225">manual change</text>
+
+  <path class="edge" d="M464 209H566"/>
+  <text class="small mid" x="516" y="225">request: a line</text>
+  <text class="small mid" x="516" y="239">of stdin</text>
+  <path class="evedge" d="M568 169H466"/>
+  <text class="small mid orange" x="516" y="150">MCP calls:</text>
+  <text class="small mid orange" x="516" y="163">HassTurnOn …</text>
+  <path class="vedge" d="M568 129H466"/>
+  <text class="small mid green" x="516" y="122">&gt;&gt; answer: …</text>
+
+  <path class="edge" d="M652 30V54"/>
+  <text class="note" x="642" y="40" style="text-anchor:end">the microphone, with --voice</text>
+
+  <text class="note mid" x="380" y="282">The assistant sees a Home Assistant: the same MCP tools, the same replies.</text>
+  <text class="note mid" x="380" y="300">Anything that changes the house, a call or a click, reaches the page as an event.</text>
+</svg>

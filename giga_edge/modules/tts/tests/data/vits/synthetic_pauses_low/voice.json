@@ -1,0 +1,50 @@
+{
+    "supported_characters": "_ ~*.,;:?!-()\"абвгдеёжзийклмнопрстуфхцчшщъыьэюяАЯОЁУЮЫИЭЕ^",
+    "gain_db": 17,
+    "pause_threshold": 0.3,
+    "pause_rules": [
+      "punkt_to_pause",
+      "no_pause_words",
+      "clean"
+    ],
+    "use_quantization": true,
+    "use_questions_rules": true,
+    "feature_names": [
+      "loudness",
+      "mean_f0",
+      "left_slope",
+      "right_slope",
+      "speed"
+    ],
+    "force_feature_label_dict": {
+      "loudness": 2
+    },
+    "question_label_dict": {
+      "left_slope": 4,
+      "mean_f0": 4,
+      "right_slope": 4,
+      "loudness": 3
+    },
+    "embedding_dims": [
+      5,
+      5,
+      5,
+      5,
+      5
+    ],
+    "replace_excl_by_period": false,
+    "layer_num": 1,
+    "model_type": "vits",
+    "length_scale": 1.0,
+    "noise_scale": 0.2,
+    "noise_scale_w": 0.4,
+    "blank_intersperse": true,
+    "cpu_vits_configuration": {
+      "decoder_overlap": 13,
+      "flow_overlap": 23,
+      "num_frames": 32,
+      "padding_parameter_size": 13800
+    },
+    "model_sample_rate": 24000
+  }
+  

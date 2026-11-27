@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="330" viewBox="0 0 760 330" role="img" aria-labelledby="title">
+  <title id="title">The KV cache is reused by the prefix shared with the previous prompt; when the history is trimmed from the beginning, only the head of the prompt is reused</title>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .new{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .kept{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .again{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .green{fill:#1a7f37}
+    .blue{fill:#0969da}
+    .orange{fill:#bc4c00}
+    .brace{fill:none;stroke-width:1.5}
+    .seg{font-size:12px}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="329" rx="12"/>
+
+  <text class="b" x="24" y="64">turn 1</text>
+  <rect class="new" x="150" y="42" width="180" height="36" rx="6"/>
+  <text class="seg mid" x="240" y="64">system, tools, scene</text>
+  <rect class="new" x="336" y="42" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="380" y="64">user 1</text>
+  <rect class="new" x="430" y="42" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="474" y="64">answer 1</text>
+  <path class="brace" stroke="#0969da" d="M150 86v5h368v-5"/>
+  <text class="note small mid blue" x="334" y="105">computed</text>
+
+  <text class="b" x="24" y="144">turn 2</text>
+  <rect class="kept" x="150" y="122" width="180" height="36" rx="6"/>
+  <text class="seg mid" x="240" y="144">system, tools, scene</text>
+  <rect class="kept" x="336" y="122" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="380" y="144">user 1</text>
+  <rect class="kept" x="430" y="122" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="474" y="144">answer 1</text>
+  <rect class="new" x="524" y="122" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="568" y="144">user 2</text>
+  <rect class="new" x="618" y="122" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="662" y="144">answer 2</text>
+  <path class="brace" stroke="#1a7f37" d="M150 166v5h368v-5"/>
+  <text class="note small mid green" x="334" y="185">the same as in the previous prompt: taken from the KV cache</text>
+  <path class="brace" stroke="#0969da" d="M524 166v5h182v-5"/>
+  <text class="note small mid blue" x="615" y="185">computed</text>
+
+  <text class="b" x="24" y="218">turn 3</text>
+  <text class="note small" x="24" y="234">turn 1 is trimmed</text>
+  <rect class="kept" x="150" y="202" width="180" height="36" rx="6"/>
+  <text class="seg mid" x="240" y="224">system, tools, scene</text>
+  <rect class="again" x="336" y="202" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="380" y="224">user 2</text>
+  <rect class="again" x="430" y="202" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="474" y="224">answer 2</text>
+  <rect class="new" x="524" y="202" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="568" y="224">user 3</text>
+  <rect class="new" x="618" y="202" width="88" height="36" rx="6"/>
+  <text class="seg mid" x="662" y="224">answer 3</text>
+  <path class="brace" stroke="#1a7f37" d="M150 246v5h180v-5"/>
+  <text class="note small mid green" x="240" y="265">from the KV cache</text>
+  <path class="brace" stroke="#bc4c00" d="M336 246v5h182v-5"/>
+  <text class="note small mid orange" x="427" y="265">moved: computed again</text>
+  <path class="brace" stroke="#0969da" d="M524 246v5h182v-5"/>
+  <text class="note small mid blue" x="615" y="265">computed</text>
+
+  <text class="note mid" x="380" y="308">Only the beginning that two prompts share is reused, so trimming the history costs one full recomputation.</text>
+</svg>

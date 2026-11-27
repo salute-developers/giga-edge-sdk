@@ -1,0 +1,252 @@
+---
+# clang-tidy config for giga_edge.
+# Philosophy: OPT-IN. Every enabled check is listed explicitly — there are no family wildcards
+# for the lint groups (bugprone / performance / modernize / readability / misc / google). A
+# clang-tidy upgrade therefore never silently turns on a new check: adding one is a deliberate
+# edit here, and the active set is fully visible.
+#
+# clang-analyzer is the one exception: it is enabled by *relevant subfamily* rather than per
+# checker, because its checkers are static-analyzer engine checks (not style lints) and self-gate
+# by language. Enabled subfamilies: core, cplusplus, deadcode, nullability, security, unix, and
+# the portable optin.* checkers (optin.core.EnumCastOutOfRange, optin.cplusplus.*,
+# optin.performance.*, optin.portability.UnixAPI).
+#   Intentionally omitted analyzer subfamilies (they never fire on our C++ and only add noise to
+#   the enabled-check list): osx.* / osx.cocoa.* / osx.coreFoundation.* / optin.osx.* (Apple/ObjC),
+#   fuchsia.* (Fuchsia OS), optin.mpi.* (MPI), webkit.* (WebKit ref-counting idioms),
+#   optin.taint.* (experimental taint analysis, high false-positive rate). apiModeling.* is also
+#   left off: those are non-diagnostic modeling checkers the analyzer pulls in as dependencies on
+#   its own, so omitting them changes nothing.
+#
+# Checks deliberately NOT enabled, with the reasons. The reasons live in this header, NOT inside
+# the folded `Checks:` scalar below: YAML treats `#` inside a folded scalar as literal text, which
+# silently corrupts the check list.
+#
+# Why no bugprone-exception-escape: it flags "an exception may escape a noexcept function /
+# destructor", but here that is almost always a false positive — destructors log errors via
+# std::cerr (they do not actually throw) and the analyzer cannot prove noexcept transitively.
+# Noisy without practical benefit.
+#
+# Why no performance-unnecessary-value-param: a low-signal perf nag — it flags by-value params
+# that could be const-ref. It false-positives on moved-from sinks whose move sits on a path
+# the analyzer can't prove unreachable (e.g. after a throw), and otherwise only churns
+# signatures for marginal copy elimination. Not worth the noise.
+#
+# Why no performance-inefficient-string-concatenation: flags chained operator+ that builds
+# temporaries. In practice it fires on one-shot error-message construction in throw paths,
+# where readability outweighs a copy that runs once on failure.
+#
+# Why no performance-avoid-endl: rewrites std::endl to '\n', dropping the flush. Here std::endl
+# is used on diagnostic/error output where the flush is intentional (get the message out
+# before a possible crash/abort); on these cold paths the rewrite changes behavior for no
+# real gain.
+#
+# Why no bugprone-unchecked-optional-access: flags every optional access (operator-> / .value())
+# the local flow can't prove guarded. But safety here is normally established by a class invariant
+# or a precondition set elsewhere (an accessor whose contract is "only call once populated", or a
+# helper reached only from a has_value() else-branch) — invariants this check cannot see across
+# functions. It thus false-positives on provably-safe access and forces NOLINT clutter or redundant
+# re-checks; and .value() already throws on empty, so it is not even UB. Noisy.
+#
+# Why no bugprone-inc-dec-in-conditions: flags reading and incrementing/decrementing the same
+# variable inside one compound condition. In our cases this is the classic in-place rstrip from
+# the vendored inih parser — `while (p > s && isspace((unsigned char)(*--p)))` — which is correct:
+# the `&&` sequence point fully evaluates `p > s` before `--p`, so there is no UB. A stylistic
+# false positive on idiomatic C; not worth the NOLINT clutter on vendored code.
+#
+# Why no bugprone-branch-clone: it flags "repeated branch body in conditional chain", but
+# false-positives on dispatch chains where each branch assigns a distinct constant — e.g. a
+# mapping of dtypes to the constants of a backend (int8 -> its INT8, int16 -> its INT16, ...): the bodies
+# are structurally identical yet semantically distinct, and flattening them (table/macro) hurts
+# readability for no correctness gain. Noisy on these idiomatic mappings.
+#
+# Also left out of bugprone (low-signal / high-noise for this codebase): easily-swappable-parameters,
+# narrowing-conversions, implicit-widening-of-multiplication-result, chained-comparison,
+# throwing-static-initialization. Out of performance: no-int-to-ptr, type-promotion-in-math-fn,
+# enum-size. misc-include-cleaner is not enabled (it demands an include-what-you-use discipline we
+# don't follow).
+Checks: >
+  -*,
+  bugprone-argument-comment,
+  bugprone-assert-side-effect,
+  bugprone-assignment-in-if-condition,
+  bugprone-bad-signal-to-kill-thread,
+  bugprone-bitwise-pointer-cast,
+  bugprone-bool-pointer-implicit-conversion,
+  bugprone-capturing-this-in-member-variable,
+  bugprone-casting-through-void,
+  bugprone-command-processor,
+  bugprone-compare-pointer-to-member-virtual-function,
+  bugprone-copy-constructor-init,
+  bugprone-copy-constructor-mutates-argument,
+  bugprone-crtp-constructor-accessibility,
+  bugprone-dangling-handle,
+  bugprone-default-operator-new-on-overaligned-type,
+  bugprone-derived-method-shadowing-base-method,
+  bugprone-dynamic-static-initializers,
+  bugprone-empty-catch,
+  bugprone-exception-copy-constructor-throws,
+  bugprone-float-loop-counter,
+  bugprone-fold-init-type,
+  bugprone-forward-declaration-namespace,
+  bugprone-forwarding-reference-overload,
+  bugprone-inaccurate-erase,
+  bugprone-incorrect-enable-if,
+  bugprone-incorrect-enable-shared-from-this,
+  bugprone-incorrect-roundings,
+  bugprone-infinite-loop,
+  bugprone-integer-division,
+  bugprone-invalid-enum-default-initialization,
+  bugprone-lambda-function-name,
+  bugprone-macro-parentheses,
+  bugprone-macro-repeated-side-effects,
+  bugprone-misleading-setter-of-reference,
+  bugprone-misplaced-operator-in-strlen-in-alloc,
+  bugprone-misplaced-pointer-arithmetic-in-alloc,
+  bugprone-misplaced-widening-cast,
+  bugprone-move-forwarding-reference,
+  bugprone-multi-level-implicit-pointer-conversion,
+  bugprone-multiple-new-in-one-expression,
+  bugprone-multiple-statement-macro,
+  bugprone-no-escape,
+  bugprone-non-zero-enum-to-bool-conversion,
+  bugprone-nondeterministic-pointer-iteration-order,
+  bugprone-not-null-terminated-result,
+  bugprone-optional-value-conversion,
+  bugprone-parent-virtual-call,
+  bugprone-pointer-arithmetic-on-polymorphic-object,
+  bugprone-posix-return,
+  bugprone-random-generator-seed,
+  bugprone-raw-memory-call-on-non-trivial-type,
+  bugprone-redundant-branch-condition,
+  bugprone-reserved-identifier,
+  bugprone-return-const-ref-from-parameter,
+  bugprone-shared-ptr-array-mismatch,
+  bugprone-signal-handler,
+  bugprone-signed-char-misuse,
+  bugprone-sizeof-container,
+  bugprone-sizeof-expression,
+  bugprone-spuriously-wake-up-functions,
+  bugprone-standalone-empty,
+  bugprone-std-namespace-modification,
+  bugprone-string-constructor,
+  bugprone-string-integer-assignment,
+  bugprone-string-literal-with-embedded-nul,
+  bugprone-stringview-nullptr,
+  bugprone-suspicious-enum-usage,
+  bugprone-suspicious-include,
+  bugprone-suspicious-memory-comparison,
+  bugprone-suspicious-memset-usage,
+  bugprone-suspicious-missing-comma,
+  bugprone-suspicious-realloc-usage,
+  bugprone-suspicious-semicolon,
+  bugprone-suspicious-string-compare,
+  bugprone-suspicious-stringview-data-usage,
+  bugprone-swapped-arguments,
+  bugprone-switch-missing-default-case,
+  bugprone-tagged-union-member-count,
+  bugprone-terminating-continue,
+  bugprone-throw-keyword-missing,
+  bugprone-too-small-loop-variable,
+  bugprone-unchecked-string-to-number-conversion,
+  bugprone-undefined-memory-manipulation,
+  bugprone-undelegated-constructor,
+  bugprone-unhandled-exception-at-new,
+  bugprone-unhandled-self-assignment,
+  bugprone-unintended-char-ostream-output,
+  bugprone-unique-ptr-array-mismatch,
+  bugprone-unsafe-functions,
+  bugprone-unused-local-non-trivial-variable,
+  bugprone-unused-raii,
+  bugprone-unused-return-value,
+  bugprone-use-after-move,
+  bugprone-virtual-near-miss,
+  performance-faster-string-find,
+  performance-for-range-copy,
+  performance-implicit-conversion-in-loop,
+  performance-inefficient-algorithm,
+  performance-inefficient-vector-operation,
+  performance-move-const-arg,
+  performance-move-constructor-init,
+  performance-no-automatic-move,
+  performance-noexcept-destructor,
+  performance-noexcept-move-constructor,
+  performance-noexcept-swap,
+  performance-trivially-destructible,
+  performance-unnecessary-copy-initialization,
+  clang-analyzer-core.*,
+  clang-analyzer-cplusplus.*,
+  clang-analyzer-deadcode.DeadStores,
+  clang-analyzer-nullability.*,
+  clang-analyzer-security.*,
+  clang-analyzer-unix.*,
+  clang-analyzer-optin.core.EnumCastOutOfRange,
+  clang-analyzer-optin.cplusplus.*,
+  clang-analyzer-optin.performance.*,
+  clang-analyzer-optin.portability.UnixAPI,
+  modernize-use-override,
+  modernize-use-nullptr,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  modernize-use-emplace,
+  modernize-make-unique,
+  modernize-make-shared,
+  modernize-use-bool-literals,
+  modernize-loop-convert,
+  modernize-redundant-void-arg,
+  modernize-use-using,
+  modernize-deprecated-headers,
+  modernize-shrink-to-fit,
+  readability-container-size-empty,
+  readability-redundant-string-cstr,
+  readability-redundant-smartptr-get,
+  readability-redundant-control-flow,
+  readability-redundant-member-init,
+  readability-misleading-indentation,
+  readability-static-accessed-through-instance,
+  readability-string-compare,
+  readability-duplicate-include,
+  readability-identifier-naming,
+  misc-unused-using-decls,
+  misc-unused-alias-decls,
+  misc-redundant-expression,
+  google-explicit-constructor,
+  google-build-using-namespace
+
+WarningsAsErrors: ''
+
+HeaderFilterRegex: '.*'
+ExcludeHeaderFilterRegex: '(/contrib/|/downloads/|/install/|/_deps/|/\.cpm/|/build_[^/]*/)'
+
+CheckOptions:
+  readability-identifier-naming.NamespaceCase: 'lower_case'
+  readability-identifier-naming.ClassCase: 'CamelCase'
+  readability-identifier-naming.StructCase: 'CamelCase'
+  readability-identifier-naming.UnionCase: 'CamelCase'
+  readability-identifier-naming.EnumCase: 'CamelCase'
+  readability-identifier-naming.TypeAliasCase: 'CamelCase'
+  readability-identifier-naming.TypedefCase: 'CamelCase'
+  readability-identifier-naming.FunctionCase: 'CamelCase'
+  readability-identifier-naming.MethodCase: 'CamelCase'
+  readability-identifier-naming.PrivateMemberCase: 'lower_case'
+  readability-identifier-naming.PrivateMemberSuffix: '_'
+  readability-identifier-naming.ProtectedMemberCase: 'lower_case'
+  readability-identifier-naming.ProtectedMemberSuffix: '_'
+  readability-identifier-naming.PublicMemberCase: 'lower_case'
+  readability-identifier-naming.ParameterCase: 'lower_case'
+  readability-identifier-naming.LocalVariableCase: 'lower_case'
+  readability-identifier-naming.EnumConstantCase: 'UPPER_CASE'
+  # VALUE_COUNT_ is the project-wide sentinel enumerator the enum lib recognizes; the
+  # trailing underscore is the convention, not a case violation.
+  readability-identifier-naming.EnumConstantIgnoredRegexp: '^VALUE_COUNT_$'
+  # YAML is the yaml-cpp namespace; we only forward-declare it, the spelling is not ours.
+  readability-identifier-naming.NamespaceIgnoredRegexp: '^YAML$'
+  # STL container-interface aliases must keep their standard lowercase spelling for
+  # generic code (iterators, traits) to work.
+  readability-identifier-naming.TypeAliasIgnoredRegexp: '^(value_type|element_type|pointer|const_pointer|reference|const_reference|size_type|difference_type|iterator|const_iterator|iterator_category)$'
+  readability-identifier-naming.TypedefIgnoredRegexp: '^(value_type|element_type|pointer|const_pointer|reference|const_reference|size_type|difference_type|iterator|const_iterator|iterator_category)$'
+  # VariableCase and MacroDefinitionCase are intentionally unset:
+  #  - VariableCase leaks onto UPPER_CASE constants (e.g. `static const MAX_*`), which the
+  #    codebase mixes by design; const/constexpr naming is deliberately not enforced.
+  #  - MacroDefinitionCase flags legitimate trailing-underscore macros (GIGA_EDGE_..._).
+  # Locals and parameters are still enforced via LocalVariableCase / ParameterCase.
+...

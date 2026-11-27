@@ -1,0 +1,12 @@
+{
+  "core": "core",
+  "parts": {
+    "spotter": "spotter",
+    "offline_assistant": "offline_assistant",
+    "asr": "asr",
+    "eou": "eou",
+    "function_calling": "function_calling",
+    "tts": "tts"
+  },
+  "optional_parts": ["tts"]
+}

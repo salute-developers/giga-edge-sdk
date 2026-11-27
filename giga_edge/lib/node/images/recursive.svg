@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="345" viewBox="0 0 760 345" role="img" aria-labelledby="title">
+  <title id="title">A recursive output feeds a node upstream on the next tick</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#8250df"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .rec{fill:none;stroke:#8250df;stroke-width:1.5;stroke-dasharray:6 4;marker-end:url(#ar)}
+    .purple{fill:#8250df}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .tick{fill:#f6f8fa;stroke:#8c959f}
+    .init{fill:#fbefff;stroke:#8250df}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="344" rx="12"/>
+
+  <rect class="frame" x="175" y="42" width="565" height="196" rx="10"/>
+  <text class="note" x="189" y="63">submodel version</text>
+
+  <path class="edge" d="M24 124H193"/>
+  <text class="mono mid" x="100" y="114" style="font-size:12px">manual_activation</text>
+
+  <rect class="node" x="195" y="92" width="180" height="64" rx="10"/>
+  <text class="mono b mid" x="285" y="120">manual_session</text>
+  <text class="mono note small mid" x="285" y="139">logical_expression</text>
+
+  <path class="edge" d="M375 124H503"/>
+  <text class="mono mid" x="439" y="114" style="font-size:12px">manual_session</text>
+
+  <rect class="node" x="505" y="92" width="215" height="64" rx="10"/>
+  <text class="mono b mid" x="612.500" y="120">manual_session_recursive</text>
+  <text class="mono note small mid" x="612.500" y="139">to_recursive_output_bool</text>
+
+  <path class="rec" d="M612 156V196Q612 206 602 206H295Q285 206 285 196V158"/>
+  <text class="mono mid purple" x="448" y="198" style="font-size:12px">manual_session_before</text>
+  <text class="note mid purple" x="448" y="224">recursive output: delivered on the next tick</text>
+
+  <rect class="init" x="30" y="272" width="120" height="36" rx="18"/>
+  <text class="mid purple" x="90" y="294" style="font-size:12px">initial value</text>
+  <path class="rec" d="M150 290H193"/>
+
+  <rect class="tick" x="195" y="268" width="140" height="44" rx="8"/>
+  <text class="b mid" x="265" y="286" style="font-size:12px">tick 1</text>
+  <text class="note small mid" x="265" y="302">reads init, writes v1</text>
+  <path class="rec" d="M335 290H378"/>
+  <text class="mono small mid purple" x="356" y="282">v1</text>
+
+  <rect class="tick" x="380" y="268" width="140" height="44" rx="8"/>
+  <text class="b mid" x="450" y="286" style="font-size:12px">tick 2</text>
+  <text class="note small mid" x="450" y="302">reads v1, writes v2</text>
+  <path class="rec" d="M520 290H563"/>
+  <text class="mono small mid purple" x="541" y="282">v2</text>
+
+  <rect class="tick" x="565" y="268" width="140" height="44" rx="8"/>
+  <text class="b mid" x="635" y="286" style="font-size:12px">tick 3</text>
+  <text class="note small mid" x="635" y="302">reads v2, writes v3</text>
+  <path class="rec" d="M705 290H740"/>
+  <text class="mono small mid purple" x="722" y="282">v3</text>
+
+  <text class="note mid" x="380" y="332">The initial value is pushed by DoInitRecursiveOutputs() when the model starts.</text>
+</svg>

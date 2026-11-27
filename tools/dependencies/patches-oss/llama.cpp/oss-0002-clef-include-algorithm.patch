@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 02/12] clef: include <algorithm>
+
+clef.cpp uses std::find and std::copy without including <algorithm>.
+---
+ src/models/clef.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/models/clef.cpp b/src/models/clef.cpp
+index 81e4ad65ef29297addfd63582014a494ed45453f..54b9f9b11ced1c651b449a597e170fea5a3976b1 100644
+--- a/src/models/clef.cpp
++++ b/src/models/clef.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "llama-ext.h"
+ 
++#include <algorithm>
+ #include <cmath>
+ 
+ void llama_model_clef::load_arch_hparams(llama_model_loader & ml) {

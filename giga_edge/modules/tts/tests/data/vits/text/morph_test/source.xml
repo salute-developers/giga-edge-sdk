@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made up for the tests in the format of the OpenCorpora export; under the licence of the code. -->
+<dictionary version="0.92" revision="1"><lemmata>
+<lemma id="1" rev="1"><l t="пациент"><g v="NOUN"/><g v="anim"/><g v="masc"/></l>
+<f t="пациент"><g v="sing"/><g v="nomn"/></f>
+<f t="пациента"><g v="sing"/><g v="gent"/></f>
+<f t="пациенту"><g v="sing"/><g v="datv"/></f>
+<f t="пациента"><g v="sing"/><g v="accs"/></f>
+<f t="пациентом"><g v="sing"/><g v="ablt"/></f>
+<f t="пациенте"><g v="sing"/><g v="loct"/></f>
+<f t="пациенты"><g v="plur"/><g v="nomn"/></f>
+<f t="пациентов"><g v="plur"/><g v="gent"/></f>
+<f t="пациентам"><g v="plur"/><g v="datv"/></f>
+<f t="пациентов"><g v="plur"/><g v="accs"/></f>
+<f t="пациентами"><g v="plur"/><g v="ablt"/></f>
+<f t="пациентах"><g v="plur"/><g v="loct"/></f>
+</lemma>
+<lemma id="2" rev="1"><l t="машина"><g v="NOUN"/><g v="inan"/><g v="femn"/></l>
+<f t="машина"><g v="sing"/><g v="nomn"/></f>
+<f t="машины"><g v="sing"/><g v="gent"/></f>
+<f t="машине"><g v="sing"/><g v="datv"/></f>
+<f t="машину"><g v="sing"/><g v="accs"/></f>
+<f t="машиной"><g v="sing"/><g v="ablt"/></f>
+<f t="машине"><g v="sing"/><g v="loct"/></f>
+<f t="машины"><g v="plur"/><g v="nomn"/></f>
+<f t="машин"><g v="plur"/><g v="gent"/></f>
+<f t="машинам"><g v="plur"/><g v="datv"/></f>
+<f t="машины"><g v="plur"/><g v="accs"/></f>
+<f t="машинами"><g v="plur"/><g v="ablt"/></f>
+<f t="машинах"><g v="plur"/><g v="loct"/></f>
+</lemma>
+<lemma id="3" rev="1"><l t="студентка"><g v="NOUN"/><g v="anim"/><g v="femn"/></l>
+<f t="студентка"><g v="sing"/><g v="nomn"/></f>
+<f t="студентки"><g v="sing"/><g v="gent"/></f>
+<f t="студентке"><g v="sing"/><g v="datv"/></f>
+<f t="студентку"><g v="sing"/><g v="accs"/></f>
+<f t="студенткой"><g v="sing"/><g v="ablt"/></f>
+<f t="студентке"><g v="sing"/><g v="loct"/></f>
+<f t="студентки"><g v="plur"/><g v="nomn"/></f>
+<f t="студенток"><g v="plur"/><g v="gent"/></f>
+<f t="студенткам"><g v="plur"/><g v="datv"/></f>
+<f t="студенток"><g v="plur"/><g v="accs"/></f>
+<f t="студентками"><g v="plur"/><g v="ablt"/></f>
+<f t="студентках"><g v="plur"/><g v="loct"/></f>
+</lemma>
+<lemma id="4" rev="1"><l t="ёлка"><g v="NOUN"/><g v="inan"/><g v="femn"/></l>
+<f t="ёлка"><g v="sing"/><g v="nomn"/></f>
+<f t="ёлки"><g v="sing"/><g v="gent"/></f>
+<f t="ёлке"><g v="sing"/><g v="datv"/></f>
+<f t="ёлку"><g v="sing"/><g v="accs"/></f>
+<f t="ёлкой"><g v="sing"/><g v="ablt"/></f>
+<f t="ёлке"><g v="sing"/><g v="loct"/></f>
+<f t="ёлки"><g v="plur"/><g v="nomn"/></f>
+<f t="ёлок"><g v="plur"/><g v="gent"/></f>
+<f t="ёлкам"><g v="plur"/><g v="datv"/></f>
+<f t="ёлки"><g v="plur"/><g v="accs"/></f>
+<f t="ёлками"><g v="plur"/><g v="ablt"/></f>
+<f t="ёлках"><g v="plur"/><g v="loct"/></f>
+</lemma>
+<lemma id="5" rev="1"><l t="видеть"><g v="VERB"/><g v="impf"/><g v="tran"/></l>
+<f t="видеть"><g v="INFN"/></f>
+<f t="вижу"><g v="sing"/><g v="1per"/><g v="pres"/></f>
+<f t="видит"><g v="sing"/><g v="3per"/><g v="pres"/></f>
+<f t="видел"><g v="masc"/><g v="sing"/><g v="past"/></f>
+</lemma>
+<lemma id="6" rev="1"><l t="стоять"><g v="VERB"/><g v="impf"/><g v="intr"/></l>
+<f t="стоять"><g v="INFN"/></f>
+<f t="стоит"><g v="sing"/><g v="3per"/><g v="pres"/></f>
+<f t="стоял"><g v="masc"/><g v="sing"/><g v="past"/></f>
+</lemma>
+<lemma id="7" rev="1"><l t="купить"><g v="VERB"/><g v="perf"/><g v="tran"/></l>
+<f t="купить"><g v="INFN"/></f>
+<f t="куплена"><g v="PRTS"/><g v="femn"/><g v="sing"/><g v="pssv"/></f>
+</lemma>
+<lemma id="8" rev="1"><l t="иван"><g v="NOUN"/><g v="anim"/><g v="masc"/><g v="Name"/></l>
+<f t="иван"><g v="sing"/><g v="nomn"/></f>
+</lemma>
+<lemma id="9" rev="1"><l t="вожатый"><g v="NOUN"/><g v="anim"/><g v="masc"/></l>
+<f t="вожатых"><g v="plur"/><g v="gent"/></f>
+<f t="вожатых"><g v="plur"/><g v="accs"/></f>
+</lemma>
+<lemma id="10" rev="1"><l t="вожатый"><g v="ADJF"/></l>
+<f t="вожатых"><g v="plur"/><g v="gent"/></f>
+</lemma>
+<lemma id="11" rev="1"><l t="озеро"><g v="NOUN"/><g v="inan"/><g v="neut"/></l>
+<f t="озеро"><g v="sing"/><g v="nomn"/></f>
+</lemma>
+<lemma id="12" rev="1"><l t="кофе"><g v="NOUN"/><g v="inan"/><g v="masc"/><g v="Fixd"/></l>
+<f t="кофе"><g v="sing"/><g v="nomn"/></f>
+</lemma>
+<lemma id="13" rev="1"><l t="ножны"><g v="NOUN"/><g v="inan"/><g v="Pltm"/></l>
+<f t="ножны"><g v="plur"/><g v="nomn"/></f>
+<f t="ножны"><g v="plur"/><g v="accs"/></f>
+</lemma>
+<lemma id="14" rev="1"><l t="интернет-магазин"><g v="NOUN"/><g v="inan"/><g v="masc"/></l>
+<f t="интернет-магазин"><g v="sing"/><g v="nomn"/></f>
+</lemma>
+</lemmata></dictionary>

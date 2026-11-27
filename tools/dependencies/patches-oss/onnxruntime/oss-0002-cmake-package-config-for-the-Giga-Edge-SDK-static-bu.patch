@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:08:16 +0000
+Subject: [PATCH 2/4] cmake: package config for the Giga Edge SDK static build
+
+This is a build patch for the Giga Edge SDK environment: ONNX Runtime is
+built as static libraries against separately installed dependencies,
+including the standalone Boost.Mp11 package (boost_mp11Config.cmake) and the
+SafeInt sources.
+
+The generated onnxruntimeConfig.cmake looked for Boost with COMPONENTS mp11,
+which the standalone package does not provide, for the SafeInt header with
+find_path() and for protobuf. Drop these three lookups. The exported static
+targets still link Boost::mp11 and protobuf::libprotobuf-lite, so the
+consumer must define both targets before find_package(onnxruntime); the SDK
+calls find_package(boost_mp11) and find_package(Protobuf) for that.
+---
+ cmake/CMakeLists.txt | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/cmake/CMakeLists.txt b/cmake/CMakeLists.txt
+index 2682b3a8718ffbeb05d2439795a4ad7c368d0d33..91fede1affa49d849dd0c776d00f2ffd4a51c1ce 100644
+--- a/cmake/CMakeLists.txt
++++ b/cmake/CMakeLists.txt
+@@ -1951,8 +1951,6 @@ else()
+         find_dependency(re2)\n\
+         find_dependency(flatbuffers)\n\
+         find_dependency(cpuinfo)\n\
+-        find_dependency(protobuf)\n\
+-        find_dependency(Boost COMPONENTS mp11)\n\
+         find_dependency(Microsoft.GSL 4.0)\n\
+         if(NOT WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL \"Android\")\n\
+         find_dependency(Iconv)\n\
+@@ -1960,7 +1958,6 @@ else()
+         if(WIN32)\n\
+         find_dependency(wil)\n\
+         endif()\n\
+-        find_path(safeint_SOURCE_DIR NAMES \"SafeInt.hpp\" REQUIRED)\n\
+         add_library(safeint_interface IMPORTED INTERFACE)\n\
+         target_include_directories(safeint_interface INTERFACE ${safeint_SOURCE_DIR})\n\
+         ")

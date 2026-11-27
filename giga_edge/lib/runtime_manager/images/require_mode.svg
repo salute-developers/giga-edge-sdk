@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="290" viewBox="0 0 760 290" role="img" aria-labelledby="title">
+  <title id="title">require_mode: which versions the manager keeps on hand besides the active ones</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .tiny{font-size:10px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .panel{fill:#fff;stroke:#d0d7de}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .slot{fill:#fff;stroke:#0969da;stroke-width:1.5;stroke-dasharray:5 4}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .off{fill:#f6f8fa;stroke:#afb8c1}
+    .feat{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .warn{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .purple{fill:#8250df}
+    .orange{fill:#bc4c00}
+    .green{fill:#1a7f37}
+    .muted{fill:#8c959f}
+    .white{fill:#fff}
+    .tagon{fill:#0969da}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .back{fill:none;stroke:#59636e;stroke-width:1.5;stroke-dasharray:6 4;marker-end:url(#a)}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+    .life{stroke:#afb8c1;stroke-dasharray:4 4}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="289" rx="12"/>
+
+  <text class="note mid" x="380" y="26">require_mode of the default or feature rule that leads from the active version A to the version B</text>
+
+  <text class="mono b mid" x="107" y="48" style="font-size:12px">none</text>
+  <rect class="panel" x="24" y="58" width="166" height="186" rx="8"/>
+  <path class="line" d="M107 98V126M107 152L66 188M107 152L148 188"/>
+  <rect class="node" x="79" y="72" width="56" height="26" rx="6"/>
+  <text class="mono small b mid" x="107" y="89">A</text>
+  <rect class="off" x="79" y="126" width="56" height="26" rx="6"/>
+  <text class="mono small mid muted" x="107" y="143">B</text>
+  <rect class="off" x="38" y="188" width="56" height="26" rx="6"/>
+  <text class="mono small mid muted" x="66" y="205">C</text>
+  <rect class="off" x="120" y="188" width="56" height="26" rx="6"/>
+  <text class="mono small mid muted" x="148" y="205">D</text>
+  <text class="note tiny end" x="80" y="172">immediate</text>
+  <text class="note tiny" x="134" y="172">none</text>
+  <text class="note small mid" x="107" y="232">nothing besides A</text>
+
+  <text class="mono b mid" x="289" y="48" style="font-size:12px">immediate</text>
+  <rect class="panel" x="206" y="58" width="166" height="186" rx="8"/>
+  <path class="line" d="M289 98V126M289 152L248 188M289 152L330 188"/>
+  <rect class="node" x="261" y="72" width="56" height="26" rx="6"/>
+  <text class="mono small b mid" x="289" y="89">A</text>
+  <rect class="val" x="261" y="126" width="56" height="26" rx="6"/>
+  <text class="mono small b mid green" x="289" y="143">B</text>
+  <rect class="off" x="220" y="188" width="56" height="26" rx="6"/>
+  <text class="mono small mid muted" x="248" y="205">C</text>
+  <rect class="off" x="302" y="188" width="56" height="26" rx="6"/>
+  <text class="mono small mid muted" x="330" y="205">D</text>
+  <text class="note tiny end" x="262" y="172">immediate</text>
+  <text class="note tiny" x="316" y="172">none</text>
+  <text class="note small mid" x="289" y="232">B only</text>
+
+  <text class="mono b mid" x="471" y="48" style="font-size:12px">selective</text>
+  <rect class="panel" x="388" y="58" width="166" height="186" rx="8"/>
+  <path class="line" d="M471 98V126M471 152L430 188M471 152L512 188"/>
+  <rect class="node" x="443" y="72" width="56" height="26" rx="6"/>
+  <text class="mono small b mid" x="471" y="89">A</text>
+  <rect class="val" x="443" y="126" width="56" height="26" rx="6"/>
+  <text class="mono small b mid green" x="471" y="143">B</text>
+  <rect class="val" x="402" y="188" width="56" height="26" rx="6"/>
+  <text class="mono small b mid green" x="430" y="205">C</text>
+  <rect class="off" x="484" y="188" width="56" height="26" rx="6"/>
+  <text class="mono small mid muted" x="512" y="205">D</text>
+  <text class="note tiny end" x="444" y="172">immediate</text>
+  <text class="note tiny" x="498" y="172">none</text>
+  <text class="note small mid" x="471" y="232">B, then by its own rules</text>
+
+  <text class="mono b mid" x="653" y="48" style="font-size:12px">recursive</text>
+  <rect class="panel" x="570" y="58" width="166" height="186" rx="8"/>
+  <path class="line" d="M653 98V126M653 152L612 188M653 152L694 188"/>
+  <rect class="node" x="625" y="72" width="56" height="26" rx="6"/>
+  <text class="mono small b mid" x="653" y="89">A</text>
+  <rect class="val" x="625" y="126" width="56" height="26" rx="6"/>
+  <text class="mono small b mid green" x="653" y="143">B</text>
+  <rect class="val" x="584" y="188" width="56" height="26" rx="6"/>
+  <text class="mono small b mid green" x="612" y="205">C</text>
+  <rect class="val" x="666" y="188" width="56" height="26" rx="6"/>
+  <text class="mono small b mid green" x="694" y="205">D</text>
+  <text class="note tiny end" x="626" y="172">immediate</text>
+  <text class="note tiny" x="680" y="172">none</text>
+  <text class="note small mid" x="653" y="232">everything below B</text>
+
+  <rect class="node" x="118" y="258" width="16" height="14" rx="3"/>
+  <text class="note" x="141" y="270">active</text>
+  <rect class="val" x="212" y="258" width="16" height="14" rx="3"/>
+  <text class="note" x="235" y="270">required: its part is kept, a missing one is requested</text>
+  <rect class="off" x="560" y="258" width="16" height="14" rx="3"/>
+  <text class="note" x="583" y="270">not required</text>
+</svg>

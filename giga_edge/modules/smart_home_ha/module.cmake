@@ -1,0 +1,1 @@
+register_module(smart_home_ha DEPENDS mcp function_calling)

@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:08:16 +0000
+Subject: [PATCH 3/4] mlas: silence clang -Warray-bounds in the AVX2 int8
+ BlkLen32 kernel
+
+MlasQ4Int8TileGemmKernelBlkLen32Avx2 sets NCols4 to 4, so its
+"if constexpr (NCols4 == 8)" branches are dead code. The function is not a
+template, so clang still checks them and reports acc[4] to acc[7] as out of
+bounds. ONNX Runtime targets are built with warnings as errors, so every
+clang build for x86-64 (macOS, Android) fails in this header. GCC and MSVC
+do not warn.
+---
+ .../mlas/lib/sqnbitgemm_kernel_avx2_int8_blklen32.h    | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/onnxruntime/core/mlas/lib/sqnbitgemm_kernel_avx2_int8_blklen32.h b/onnxruntime/core/mlas/lib/sqnbitgemm_kernel_avx2_int8_blklen32.h
+index d2d9886ab61f730b7487763ee7555629b699151c..d6619f5a59c63785223f3512195dbd04c5444324 100644
+--- a/onnxruntime/core/mlas/lib/sqnbitgemm_kernel_avx2_int8_blklen32.h
++++ b/onnxruntime/core/mlas/lib/sqnbitgemm_kernel_avx2_int8_blklen32.h
+@@ -6,6 +6,13 @@
+ #include "qnbitgemm.h"
+ #include "sqnbitgemm_kernel_avx_common.h"
+ 
++// MlasQ4Int8TileGemmKernelBlkLen32Avx2 has NCols4 == 4, so its "if constexpr (NCols4 == 8)" branches are
++// dead code. It is not a template, so clang still checks them and flags acc[4..7]; warnings are errors here.
++#if defined(__clang__)
++#pragma clang diagnostic push
++#pragma clang diagnostic ignored "-Warray-bounds"
++#endif
++
+ MLAS_DECLSPEC_ALIGN(static const uint32_t MasksAvx2BlkLen32[24], 32) = {
+     0x00ff00ff, 0x00ff00ff, 0x00ff00ff, 0x00ff00ff, 0x00ff00ff, 0x00ff00ff, 0x00ff00ff, 0x00ff00ff,
+     0xff00ff00, 0xff00ff00, 0xff00ff00, 0xff00ff00, 0xff00ff00, 0xff00ff00, 0xff00ff00, 0xff00ff00,
+@@ -1756,3 +1763,6 @@ MlasQ4Int8TileGemmKernelBlkLen32Avx2(
+     } // m
+     return CountM;
+ }
++#if defined(__clang__)
++#pragma clang diagnostic pop
++#endif

@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="318" viewBox="0 0 760 318" role="img" aria-labelledby="title">
+  <title id="title">Layers of the SDK: the host application, the runtime manager, the runtime, modules with nodes, inference backends</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M10 0L0 5L10 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .panel{fill:#fff;stroke:#d0d7de}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .tool{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .purple{fill:#8250df}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .both{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a);marker-start:url(#b)}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="317" rx="12"/>
+
+  <rect class="host" x="170" y="24" width="566" height="46" rx="8"/>
+  <text class="b" x="186" y="43">host application</text>
+  <text class="note small" x="186" y="60">pushes data, subscribes to results, chooses features and parts</text>
+  <rect class="card" x="170" y="80" width="566" height="46" rx="8"/>
+  <text class="b" x="186" y="99">runtime manager</text>
+  <text class="note small" x="186" y="116">assembles a model from parts, switches submodel versions by features, holds capabilities</text>
+  <rect class="card" x="170" y="136" width="566" height="46" rx="8"/>
+  <text class="b" x="186" y="155">runtime</text>
+  <text class="note small" x="186" y="172">the graph: nodes, ticks, a thread pool, environments</text>
+  <rect class="node" x="170" y="192" width="566" height="46" rx="8"/>
+  <text class="b" x="186" y="211">modules</text>
+  <text class="note small" x="186" y="228">nodes: llm, mcp, spotter, model, tts, audio_io and others; a build takes the ones it needs</text>
+  <rect class="host" x="170" y="248" width="566" height="46" rx="8"/>
+  <text class="b" x="186" y="267">inference backends</text>
+  <text class="note small" x="186" y="284">llama.cpp, ONNX Runtime, TensorFlow Lite</text>
+  <path class="line" d="M160 80H152V182H160"/>
+  <text class="mono small end" x="144" y="128">giga_edge/lib</text>
+  <text class="note small end" x="144" y="143">always built</text>
+  <path class="line" d="M160 192H152V238H160"/>
+  <text class="mono small end" x="144" y="212">giga_edge/modules</text>
+  <text class="note small end" x="144" y="227">optional</text>
+  <path class="line" d="M160 248H152V294H160"/>
+  <text class="note small end" x="144" y="275">dependencies</text>
+</svg>

@@ -1,0 +1,1 @@
+register_module(function_calling DEPENDS assistant_core)

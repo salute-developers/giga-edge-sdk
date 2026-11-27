@@ -1,0 +1,18 @@
+tensorflow/lite: fp16 headers also without GPU, NNAPI and XNNPACK.
+
+In TF 2.20 kernels (e.g. kernels/embedding_lookup.cc) include "fp16/fp16.h" unconditionally, while
+tensorflow/lite/CMakeLists.txt adds fp16_headers only for TFLITE_ENABLE_GPU, _TFLITE_ENABLE_NNAPI and
+TFLITE_ENABLE_XNNPACK. With all three off the build fails. find_package(fp16_headers) is added next to the
+other required dependencies; the source is FETCHCONTENT_SOURCE_DIR_FP16_HEADERS.
+
+--- a/tensorflow/lite/CMakeLists.txt
++++ b/tensorflow/lite/CMakeLists.txt
+@@ -175,6 +175,8 @@
+ endif()
+ find_package(cpuinfo REQUIRED)  #CPUINFO is used by XNNPACK and RUY library
+ find_package(ml_dtypes REQUIRED)
++# kernels/ include fp16/fp16.h unconditionally, not only with GPU/NNAPI/XNNPACK
++find_package(fp16_headers REQUIRED)
+ find_package(ruy REQUIRED)
+ # Include TSL, which is in tensorflow/third_party
+ include_directories(

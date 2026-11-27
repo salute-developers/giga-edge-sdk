@@ -1,0 +1,9 @@
+dict = StringFile[ 'dict_second.tsv', 'utf8', 'utf8'];
+
+space = " ".utf8;
+
+export float_grammar_second = Optimize[
+  (dict space?)*
+];
+
+basic_test_1 = AssertEqual["один".utf8 @ float_grammar_second, "1.1".utf8 ];

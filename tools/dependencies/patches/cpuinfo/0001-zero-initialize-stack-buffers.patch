@@ -1,0 +1,24 @@
+cpuinfo: zero-initialize stack buffers.
+
+Our change on top of upstream cpuinfo de0ce7c (the pin of tflite 2.20 and its XNNPACK). On modern arm64 kernels
+/proc/cpuinfo may legitimately omit the "Hardware" field; other optional identification sources ("Revision",
+Android property-based identifiers) may be absent too. The corresponding stack buffers / structs are
+default-initialized, so missing optional identifiers are treated as empty values rather than uninitialized memory
+(Valgrind warnings).
+
+diff --git a/src/arm/linux/init.c b/src/arm/linux/init.c
+index 1eab69d..3fb7480 100644
+--- a/src/arm/linux/init.c
++++ b/src/arm/linux/init.c
+@@ -171,9 +171,9 @@ void cpuinfo_arm_linux_init(void) {
+ 	struct cpuinfo_android_properties android_properties;
+ 	cpuinfo_arm_android_parse_properties(&android_properties);
+ #else
+-	char proc_cpuinfo_hardware[CPUINFO_HARDWARE_VALUE_MAX];
++	char proc_cpuinfo_hardware[CPUINFO_HARDWARE_VALUE_MAX] = {0};
+ #endif
+-	char proc_cpuinfo_revision[CPUINFO_REVISION_VALUE_MAX];
++	char proc_cpuinfo_revision[CPUINFO_REVISION_VALUE_MAX] = {0};
+ 
+ 	if (!cpuinfo_arm_linux_parse_proc_cpuinfo(
+ #if defined(__ANDROID__)

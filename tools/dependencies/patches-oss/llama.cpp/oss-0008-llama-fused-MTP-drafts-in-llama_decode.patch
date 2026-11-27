@@ -1,0 +1,1204 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 08/12] llama: fused MTP drafts in llama_decode
+
+The MTP (NextN) blocks of Qwen3 run in the same llama_decode as the main
+model: llama_set_mtp_fused, llama_get_mtp_fused, llama_get_mtp_drafts_ith and
+LLAMA_HAS_MTP_FUSED. Drafts come from the last output of the ubatch or, in a
+verification batch, from the first row whose argmax differs from the next
+token. The verification batch uses the split_rows mode of flash attention, so
+its rows match step-by-step generation bitwise.
+
+The MTP blocks apply rope_freqs like the main layers. test-mtp-rope-factors
+checks that a model with rope_freqs 2.0 gives the same logits and drafts bit
+for bit as the same model without the tensor run with freq_scale 0.5.
+---
+ include/llama.h                 |  17 ++
+ src/llama-context.cpp           | 121 ++++++++++++++
+ src/llama-context.h             |  10 ++
+ src/llama-cparams.h             |   3 +
+ src/llama-graph.cpp             | 201 +++++++++++++++++++++++
+ src/llama-graph.h               |  58 +++++++
+ src/llama-model.cpp             |   3 +
+ src/models/models.h             |  10 ++
+ src/models/qwen3.cpp            | 280 +++++++++++++++++++++++++++++++-
+ tests/CMakeLists.txt            |   2 +
+ tests/test-mtp-rope-factors.cpp | 175 ++++++++++++++++++++
+ 11 files changed, 877 insertions(+), 3 deletions(-)
+ create mode 100644 tests/test-mtp-rope-factors.cpp
+
+diff --git a/include/llama.h b/include/llama.h
+index 9bca8ee1063d2f913be4e5be89b87cd6015b3a71..87be02e0e76738b0cef01e3fbe7e6f5ef276bcfc 100644
+--- a/include/llama.h
++++ b/include/llama.h
+@@ -1141,6 +1141,23 @@ extern "C" {
+     // returns NULL for invalid ids.
+     LLAMA_API float * llama_get_logits_ith(struct llama_context * ctx, int32_t i);
+ 
++    // Fused MTP: the MTP (NextN) blocks are computed in the same llama_decode as the main model.
++    // Requires a model with MTP loaded with load_mtp = true, flash attention, a single sequence and (for a windowed model)
++    // swa_full = true. Otherwise llama_set_mtp_fused leaves MTP off and llama_get_mtp_fused returns 0.
++#define LLAMA_HAS_MTP_FUSED 1
++
++    // n_drafts: how many MTP blocks to compute (0 = off), at most llama_model_n_layer_nextn()
++    LLAMA_API void llama_set_mtp_fused(struct llama_context * ctx, int32_t n_drafts);
++    LLAMA_API int32_t llama_get_mtp_fused(const struct llama_context * ctx);
++
++    // Drafts of row i of the last llama_decode (indexed as in llama_get_logits_ith):
++    // tokens for positions pos_i+2 .. pos_i+1+n, given that position pos_i+1 holds the argmax of row i.
++    // Only one row of a ubatch has drafts: the last output or, if all rows are outputs (draft verification),
++    // the first row whose argmax differs from the next token of the batch (or the last row). A batch larger than n_ubatch
++    // is split into ubatches, and each has its own such row.
++    // Returns the number of tokens written (0 if there are no drafts).
++    LLAMA_API int32_t llama_get_mtp_drafts_ith(struct llama_context * ctx, int32_t i, llama_token * out, int32_t n_max);
++
+     // Get all output token embeddings.
+     // when pooling_type == LLAMA_POOLING_TYPE_NONE or when using a generative model,
+     // the embeddings for which llama_batch.logits[i] != 0 are stored contiguously
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 07b4c6148eb5b1d5d9b0c2d50bd7f8d59028c97e..542fe66d3aaa58f265b2bec148de9d3fd73e939b 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -386,6 +386,8 @@ llama_context::llama_context(
+         }
+     }
+ 
++    cparams.swa_full = params.swa_full;
++
+     // init the memory module
+     if (!hparams.vocab_only) {
+         llama_memory_params params_mem = {
+@@ -965,6 +967,36 @@ float * llama_context::get_logits_ith(int32_t i) {
+     }
+ }
+ 
++int32_t llama_context::get_mtp_drafts_ith(int32_t i, llama_token * out, int32_t n_max) {
++    if (cparams.mtp_fused == 0 || mtp_drafts.empty() || n_max <= 0) {
++        return 0;
++    }
++
++    output_reorder();
++
++    int64_t j = -1;
++    try {
++        j = output_resolve_row(i);
++    } catch (const std::exception &) {
++        return 0;
++    }
++    if (j < 0 || j >= mtp_drafts_stride) {
++        return 0;
++    }
++
++    const int32_t n_blocks = (int32_t) (mtp_drafts.size() / mtp_drafts_stride);
++    int32_t n = 0;
++    for (; n < std::min<int32_t>(n_max, n_blocks); ++n) {
++        const llama_token t = mtp_drafts[n*mtp_drafts_stride + j];
++        if (t == LLAMA_TOKEN_NULL) {
++            break;
++        }
++        out[n] = t;
++    }
++
++    return n;
++}
++
+ float * llama_context::get_embeddings() {
+     output_reorder();
+ 
+@@ -1251,6 +1283,44 @@ void llama_context::set_nextn_layer_offset(int32_t offset) {
+     cparams.nextn_layer_offset = offset;
+ }
+ 
++void llama_context::set_mtp_fused(int32_t n_drafts) {
++    const auto & hparams = model.hparams;
++
++    uint32_t n = 0;
++    if (n_drafts > 0) {
++        const bool loaded = model.arch == LLM_ARCH_QWEN3 && hparams.n_layer_nextn > 0 &&
++            model.layers[hparams.n_layer()].nextn.eh_proj != nullptr && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT;
++
++        if (!loaded) {
++            LLAMA_LOG_WARN("%s: no MTP layers loaded (needs a qwen3 model with MTP and load_mtp = true), fused MTP stays off\n", __func__);
++        } else if (!cparams.flash_attn) {
++            LLAMA_LOG_WARN("%s: fused MTP requires flash attention, stays off\n", __func__);
++        } else if (cparams.n_seq_max > 1) {
++            LLAMA_LOG_WARN("%s: fused MTP requires a single sequence (n_seq_max = 1), stays off\n", __func__);
++        } else if (!cparams.swa_full && hparams.is_swa_any()) {
++            // in a window ring buffer the cell layout after a draft rollback differs from step-by-step generation:
++            // the rows of a verification batch would not match decode bitwise
++            LLAMA_LOG_WARN("%s: fused MTP requires swa_full = true for a sliding window model, stays off\n", __func__);
++        } else {
++            n = std::min<uint32_t>(n_drafts, hparams.n_layer_nextn);
++        }
++    }
++
++    if (n == cparams.mtp_fused) {
++        return;
++    }
++
++    LLAMA_LOG_INFO("%s: fused MTP blocks = %u (rows per ubatch <= %u)\n", __func__, n, cparams.mtp_rows);
++
++    cparams.mtp_fused = n;
++
++    // the MTP layer KV and the drafts computed with a different number of blocks are not used
++    mtp_valid.clear();
++    mtp_drafts.clear();
++
++    sched_need_reserve = true;
++}
++
+ void llama_context::set_causal_attn(bool value) {
+     LLAMA_LOG_DEBUG("%s: value = %d\n", __func__, value);
+ 
+@@ -1951,6 +2021,24 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
+             }
+         }
+ 
++        // fused MTP: only the outputs inside the MTP region (the last outputs of the ubatch) have drafts
++        if (cparams.mtp_fused > 0 && n_outputs > 0 && !mtp_drafts.empty()) {
++            GGML_ASSERT(n_outputs_prev + n_outputs <= mtp_drafts_stride);
++
++            for (uint32_t k = 0; k < cparams.mtp_fused; ++k) {
++                std::fill_n(mtp_drafts.begin() + k*mtp_drafts_stride + n_outputs_prev, n_outputs, LLAMA_TOKEN_NULL);
++            }
++
++            const int64_t n_reg = res->mtp_n_out_reg;
++            for (size_t k = 0; k < res->t_mtp_drafts.size() && n_reg > 0; ++k) {
++                ggml_tensor * t = res->t_mtp_drafts[k];
++                ggml_backend_t backend_t = ggml_backend_sched_get_tensor_backend(sched.get(), t);
++                GGML_ASSERT(backend_t != nullptr);
++                ggml_backend_tensor_get_async(backend_t, t,
++                        mtp_drafts.data() + k*mtp_drafts_stride + n_outputs_prev + n_outputs - n_reg, 0, n_reg*sizeof(llama_token));
++            }
++        }
++
+         // extract embeddings
+         if (embd.data && t_embd && n_outputs > 0) {
+             ggml_backend_t backend_embd = ggml_backend_sched_get_tensor_backend(sched.get(), t_embd);
+@@ -2168,6 +2256,13 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
+         output_ids.resize(n_batch);
+     }
+ 
++    if (cparams.mtp_fused > 0) {
++        mtp_drafts_stride = n_outputs_max;
++        mtp_drafts.assign(cparams.mtp_fused*n_outputs_max, LLAMA_TOKEN_NULL);
++    } else {
++        mtp_drafts.clear();
++    }
++
+     const size_t prev_size = buf_output ? ggml_backend_buffer_get_size(buf_output.get()) : 0;
+     const size_t new_size  =
+         (logits.size + embd.size + embd_nextn.size + embd_layer_inp_float_count + backend_float_count) * sizeof(float) +
+@@ -2337,6 +2432,12 @@ void llama_context::output_reorder() {
+             }
+         }
+ 
++        if (!mtp_drafts.empty()) {
++            for (size_t k = 0; k < mtp_drafts.size() / mtp_drafts_stride; ++k) {
++                std::swap(mtp_drafts[k*mtp_drafts_stride + i0], mtp_drafts[k*mtp_drafts_stride + i1]);
++            }
++        }
++
+         if (!sampling.samplers.empty()) {
+             assert(sampling.logits.size > 0);
+             assert(sampling.probs.size > 0);
+@@ -2603,6 +2704,7 @@ llm_graph_params llama_context::graph_params(
+         /*.n_outputs   =*/ n_outputs,
+         /*.cb          =*/ graph_get_cb(),
+         /*.res         =*/ res,
++        /*.mtp_valid   =*/ &mtp_valid,
+     };
+ }
+ 
+@@ -3420,6 +3522,9 @@ size_t llama_context::state_write_data(llama_io_write_i & io) {
+ size_t llama_context::state_read_data(llama_io_read_i & io) {
+     LLAMA_LOG_DEBUG("%s: reading state\n", __func__);
+ 
++    // the tracking of cells with MTP layer KV is not part of the state: MTP does not use restored cells
++    mtp_valid.clear();
++
+     // read model info
+     {
+         LLAMA_LOG_DEBUG("%s: - reading model info\n", __func__);
+@@ -3452,6 +3557,8 @@ size_t llama_context::state_seq_write_data(llama_io_write_i & io, llama_seq_id s
+ }
+ 
+ size_t llama_context::state_seq_read_data(llama_io_read_i & io, llama_seq_id seq_id, llama_state_seq_flags flags) {
++    mtp_valid.clear();
++
+     if (memory) {
+         memory->state_read(io, seq_id, flags);
+     }
+@@ -4065,6 +4172,20 @@ float * llama_get_embeddings_nextn_ith(llama_context * ctx, int32_t i) {
+     return ctx->get_embeddings_nextn_ith(i);
+ }
+ 
++int32_t llama_get_mtp_fused(const llama_context * ctx) {
++    return ctx->get_cparams().mtp_fused;
++}
++
++void llama_set_mtp_fused(llama_context * ctx, int32_t n_drafts) {
++    ctx->set_mtp_fused(n_drafts);
++}
++
++int32_t llama_get_mtp_drafts_ith(llama_context * ctx, int32_t i, llama_token * out, int32_t n_max) {
++    ctx->synchronize();
++
++    return ctx->get_mtp_drafts_ith(i, out, n_max);
++}
++
+ float * llama_get_embeddings_layer_inp(llama_context * ctx, uint32_t lid) {
+     ctx->synchronize();
+ 
+diff --git a/src/llama-context.h b/src/llama-context.h
+index 95b7226288b4e18f02e9041ee9a1994f5e5b960d..93bef802d7fbdff8c90e24352ed4f79e11388d89 100644
+--- a/src/llama-context.h
++++ b/src/llama-context.h
+@@ -89,6 +89,8 @@ struct llama_context {
+     float * get_embeddings_nextn();
+     float * get_embeddings_nextn_ith(int32_t i);
+ 
++    int32_t get_mtp_drafts_ith(int32_t i, llama_token * out, int32_t n_max);
++
+     float * get_embeddings_layer_inp(uint32_t lid);
+ 
+     llama_token * get_sampled_tokens() const;
+@@ -119,6 +121,7 @@ struct llama_context {
+     void set_embeddings_nextn(bool value, bool masked);
+     void set_embeddings_layer_inp(uint32_t lid, bool enable);
+     void set_nextn_layer_offset(int32_t offset);
++    void set_mtp_fused(int32_t n_drafts);
+     void set_causal_attn(bool value);
+     void set_warmup(bool value);
+ 
+@@ -314,6 +317,13 @@ private:
+     std::vector<buffer_view<float>> embd_layer_inp;
+     std::vector<int32_t> embd_batch_idxs; // extracted index -> original batch index
+ 
++    // fused MTP: drafts per block, [mtp_fused][mtp_drafts_stride], rows as in logits
++    std::vector<llama_token> mtp_drafts;
++    int64_t mtp_drafts_stride = 0;
++
++    // fused MTP: per cache cell, whether the MTP layers have written their KV there (maintained by the graph)
++    mutable std::vector<uint8_t> mtp_valid;
++
+     struct sampling_info {
+         // !samplers.empty() to check if any samplers are active
+         std::map<llama_seq_id, llama_sampler *> samplers;
+diff --git a/src/llama-cparams.h b/src/llama-cparams.h
+index 004fec5a6dd837b62df9a1ba7441bc52a4cf0b08..46a95e990f5c387e2f45e59bee8a15b20a10d1bf 100644
+--- a/src/llama-cparams.h
++++ b/src/llama-cparams.h
+@@ -35,6 +35,9 @@ struct llama_cparams {
+     bool embeddings;
+     bool embeddings_nextn;        // also extract the hidden state before the final output norm
+     bool embeddings_nextn_masked; // extract for only rows where batch.logits != 0
++    uint32_t mtp_fused = 0;       // number of MTP blocks in the main graph (0 = off)
++    bool     swa_full  = true;    // the window cache keeps all positions (not a ring buffer)
++    uint32_t mtp_rows  = 32;      // MTP is computed for at most this many last rows of the ubatch
+     bool causal_attn;
+     bool offload_kqv;
+     bool flash_attn;
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index 1112ad885493ff560fdbdf3d0a1476a594cbd9ee..7f08135f72799302f62217513cb253415199d965 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -171,6 +171,196 @@ bool llm_graph_input_embd_h::can_reuse(const llm_graph_params & params) {
+     return res;
+ }
+ 
++// row j + d of the ubatch if its position is pos[j] + d; otherwise -1
++static int32_t llm_mtp_next_row(const llama_ubatch & ub, int32_t j, int32_t d) {
++    return j + d < (int32_t) ub.n_tokens && ub.pos[j + d] == ub.pos[j] + d ? j + d : -1;
++}
++
++static bool llm_mtp_is_out(const llama_ubatch & ub, int32_t n_outputs, int32_t j) {
++    return n_outputs == (int32_t) ub.n_tokens || (ub.output && ub.output[j]);
++}
++
++llm_mtp_layout llm_mtp_layout::make(const llama_ubatch & ub, int32_t n_outputs, int32_t n_mtp, int32_t r_max) {
++    llm_mtp_layout res;
++    res.n_out = n_outputs;
++
++    if (n_mtp <= 0 || n_outputs <= 0 || r_max <= 0 || !ub.token || ub.is_mixed()) {
++        return res;
++    }
++
++    const int32_t n  = ub.n_tokens;
++    res.R = std::min(n, r_max);
++
++    const int32_t j0 = n - res.R;
++
++    for (int32_t j = j0; j < n; ++j) {
++        if (llm_mtp_is_out(ub, n_outputs, j)) {
++            res.out_reg.push_back(j - j0);
++        }
++    }
++    res.n_out_reg = res.out_reg.size();
++    res.crop      = res.R < n && res.n_out_reg == n_outputs;
++    res.dyn       = res.R == n && res.n_out_reg == n && n > 1;
++
++    if (!res.dyn && res.n_out_reg > 0) {
++        res.h_row = res.out_reg.back();
++    }
++    if (!res.crop) {
++        res.out_reg.clear();
++    }
++
++    return res;
++}
++
++void llm_graph_input_mtp::set_input(const llama_ubatch * ubatch) {
++    const int32_t n  = ubatch->n_tokens;
++    const int32_t R  = layout.R;
++    const int32_t j0 = n - R;
++
++    // the MTP layer KV exists only in the cells of the region rows; the other cells of this ubatch have none
++    GGML_ASSERT(k_idxs_src && ggml_backend_buffer_is_host(k_idxs_src->buffer));
++    {
++        const int64_t * cells = (const int64_t *) k_idxs_src->data;
++        for (int32_t j = 0; j < n; ++j) {
++            const size_t c = cells[j];
++            if (c >= valid->size()) {
++                valid->resize(c + 1, 0);
++            }
++            (*valid)[c] = R > 0 && j >= j0;
++        }
++    }
++
++    if (R == 0) {
++        return;
++    }
++
++    const int32_t n_out = layout.n_out;
++    const int32_t h_row = layout.h_row;
++
++    // output index of each row of the ubatch
++    std::vector<int32_t> out_of(n, -1);
++    {
++        int32_t o = 0;
++        for (int32_t j = 0; j < n; ++j) {
++            if (llm_mtp_is_out(*ubatch, n_out, j)) {
++                out_of[j] = o++;
++            }
++        }
++    }
++
++    // embedding pool of block k: [batch (R) | argmax of the main model (n_out) | drafts of blocks 0..k-1 of row H]
++    // m-th token of the chain of row H: its argmax for m = 0, otherwise the draft of block m-1
++    auto chain_idx = [&](int32_t m) {
++        return m == 0 ? R + out_of[j0 + h_row] : R + n_out + m - 1;
++    };
++
++    // block k of row j takes the token of position q = pos_j+k+1:
++    //  - row H: from its own chain;
++    //  - if row q-1 is in the batch and is an output: its argmax (on the accepted path this is the right token);
++    //  - otherwise from the batch, and past the end of the batch from the chain of row H
++    for (int32_t k = 0; k < n_mtp; ++k) {
++        int32_t * t = (int32_t *) tok[k]->data;
++        int32_t * s = (int32_t *) sel[k]->data;
++
++        for (int32_t r = 0; r < R; ++r) {
++            const int32_t j = j0 + r;
++
++            t[r] = ubatch->token[j];
++            s[r] = r;
++
++            if (r == h_row) {
++                s[r] = chain_idx(k);
++                continue;
++            }
++
++            const int32_t jp = llm_mtp_next_row(*ubatch, j, k);
++            if (jp >= 0 && out_of[jp] >= 0) {
++                s[r] = R + out_of[jp];
++                continue;
++            }
++
++            const int32_t nx = llm_mtp_next_row(*ubatch, j, k + 1);
++            if (nx >= 0) {
++                t[r] = ubatch->token[nx];
++                continue;
++            }
++
++            if (h_row > r) {
++                const llama_pos m = ubatch->pos[j] + k - ubatch->pos[j0 + h_row];
++                if (m >= 0 && m <= k) {
++                    s[r] = chain_idx(m);
++                }
++            }
++        }
++    }
++
++    if (out_reg && out_reg->buffer) {
++        memcpy(out_reg->data, layout.out_reg.data(), layout.out_reg.size()*sizeof(int32_t));
++    }
++
++    if (iota && iota->buffer) {
++        for (int32_t r = 0; r < R; ++r) {
++            ((float *) iota->data)[r] = r;
++        }
++    }
++    if (nxt && nxt->buffer) {
++        for (int32_t r = 1; r < R; ++r) {
++            ((float *) nxt->data)[r - 1] = ubatch->token[j0 + r];
++        }
++    }
++
++    // mask: the region rows of the main model mask, minus the cells without MTP layer KV
++    GGML_ASSERT(mask_src && ggml_backend_buffer_is_host(mask_src->buffer));
++    GGML_ASSERT(mask->type == mask_src->type && mask->ne[0] == mask_src->ne[0]);
++
++    const int64_t n_kv  = mask->ne[0];
++    const size_t  row_b = n_kv*ggml_element_size(mask);
++
++    std::vector<uint8_t> rows(R*row_b);
++    for (int32_t r = 0; r < R; ++r) {
++        memcpy(rows.data() + r*row_b, (const char *) mask_src->data + (j0 + r)*mask_src->nb[1], row_b);
++    }
++    for (int64_t c = 0; c < n_kv; ++c) {
++        if ((size_t) c < valid->size() && (*valid)[c]) {
++            continue;
++        }
++        for (int32_t r = 0; r < R; ++r) {
++            if (mask->type == GGML_TYPE_F16) {
++                ((ggml_fp16_t *) (rows.data() + r*row_b))[c] = ggml_fp32_to_fp16(-INFINITY);
++            } else {
++                ((float *) (rows.data() + r*row_b))[c] = -INFINITY;
++            }
++        }
++    }
++
++    // the inputs the graph does not use are not allocated
++    if (mask->buffer) {
++        for (int32_t r = 0; r < R; ++r) {
++            memcpy((char *) mask->data + r*mask->nb[1], rows.data() + r*row_b, row_b);
++        }
++    }
++    if (h_idx && h_idx->buffer) {
++        ((int32_t *) h_idx->data)[0] = h_row;
++    }
++    if (mask_h && mask_h->buffer) {
++        memcpy(mask_h->data, rows.data() + h_row*row_b, row_b);
++        ((int32_t *) pos_h->data)[0] = ubatch->pos[j0 + h_row];
++    }
++}
++
++bool llm_graph_input_mtp::can_reuse(const llm_graph_params & params) {
++    auto other = llm_mtp_layout::make(params.ubatch, params.n_outputs, n_mtp, r_max);
++
++    if (other.R != layout.R || other.n_out != layout.n_out || other.crop != layout.crop || other.dyn != layout.dyn ||
++        other.n_out_reg != layout.n_out_reg || (other.h_row >= 0) != (layout.h_row >= 0)) {
++        return false;
++    }
++
++    layout = std::move(other);
++
++    return true;
++}
++
+ void llm_graph_input_pos::set_input(const llama_ubatch * ubatch) {
+     if (ubatch->pos && pos) {
+         const int64_t n_tokens = ubatch->n_tokens;
+@@ -1361,6 +1551,9 @@ void llm_graph_result::reset() {
+     t_embd_pooled = nullptr;
+     t_h_nextn     = nullptr;
+ 
++    t_mtp_drafts.clear();
++    mtp_n_out_reg = 0;
++
+     t_layer_inp.resize(LLAMA_MAX_LAYERS + 1);
+     std::fill(t_layer_inp.begin(), t_layer_inp.end(), nullptr);
+ 
+@@ -1406,6 +1599,9 @@ void llm_graph_result::set_outputs(const llm_graph_params & params) {
+     if (t_h_nextn != nullptr) {
+         ggml_set_output(t_h_nextn);
+     }
++    for (auto * t : t_mtp_drafts) {
++        ggml_set_output(t);
++    }
+     {
+         const auto & embeddings_layer_inp = params.cparams.embeddings_layer_inp;
+         for (size_t il = 0; il < embeddings_layer_inp.size(); ++il) {
+@@ -1527,6 +1723,7 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
+     samplers         (params.samplers),
+     cb_func          (params.cb),
+     res              (params.res),
++    mtp_valid        (params.mtp_valid),
+     ctx0             (res->get_ctx()),
+     gf               (res->get_gf()) {
+         res->set_params(params);
+@@ -2739,6 +2936,10 @@ ggml_tensor * llm_graph_context::build_attn_mha(
+         ggml_flash_attn_ext_add_sinks(cur, sinks);
+         GGML_ASSERT(n_kv_max >= 0 && n_kv_max <= INT32_MAX);
+         ggml_flash_attn_ext_set_n_kv_max(cur, static_cast<int32_t>(n_kv_max));
++        // fused MTP verification batch: the rows are computed as in step-by-step generation
++        if (cparams.mtp_fused > 0 && n_outputs == n_tokens && n_tokens > 1) {
++            ggml_flash_attn_ext_set_split_rows(cur, true);
++        }
+         ggml_prec_set_acc(cur, GGML_PREC_F32);
+ 
+         if (v_mla) {
+diff --git a/src/llama-graph.h b/src/llama-graph.h
+index 5cf74c997eb276e7efb3696ab5d321699a589cb5..4489eebf698fbe5e11d0e916aa194fde40a70e3a 100644
+--- a/src/llama-graph.h
++++ b/src/llama-graph.h
+@@ -163,6 +163,55 @@ public:
+     const int64_t n_embd = 0;
+ };
+ 
++// Fused MTP: layout of the ubatch rows for the chain of MTP blocks (a single sequence).
++// MTP is computed for the last R rows of the ubatch (only if the ubatch has outputs). The full output of the last block and
++// the drafts are needed only on row H: the last output of the ubatch or, in a verification batch (all rows are outputs),
++// the row of the first rejection, which the graph finds (dyn). The other rows need only the MTP layer KV.
++struct llm_mtp_layout {
++    int32_t R         = 0;
++    int32_t n_out     = 0;     // outputs in the ubatch
++    int32_t n_out_reg = 0;     // of them inside the region (always the last outputs)
++    bool    crop      = false; // the region is shorter than the ubatch and holds all outputs: the last main model layer runs only on the region
++    bool    dyn       = false; // verification batch: the graph picks row H
++    int32_t h_row     = -1;    // row H inside the region if not dyn; -1 if none
++    std::vector<int32_t> out_reg; // with crop: the outputs inside the region
++
++    static llm_mtp_layout make(const llama_ubatch & ubatch, int32_t n_outputs, int32_t n_mtp, int32_t r_max);
++};
++
++class llm_graph_input_mtp : public llm_graph_input_i {
++public:
++    llm_graph_input_mtp(int32_t n_mtp, int32_t r_max, std::vector<uint8_t> * valid) :
++        n_mtp(n_mtp), r_max(r_max), valid(valid) {}
++    virtual ~llm_graph_input_mtp() = default;
++
++    void set_input(const llama_ubatch * ubatch) override;
++
++    bool can_reuse(const llm_graph_params & params) override;
++
++    const int32_t n_mtp;
++    const int32_t r_max;
++
++    llm_mtp_layout layout;
++
++    std::vector<ggml_tensor *> tok; // I32 [R] per block: token of position pos+k+1 from the batch
++    std::vector<ggml_tensor *> sel; // I32 [R] per block: index into the pool [batch | chain]
++    ggml_tensor * mask    = nullptr; // [n_kv, R] attention mask of the MTP layers
++    ggml_tensor * h_idx   = nullptr; // I32 [1]       row H (not dyn)
++    ggml_tensor * pos_h   = nullptr; // I32 [1]       its position (the last block runs only on it)
++    ggml_tensor * mask_h  = nullptr; // [n_kv, 1]     its mask row
++    ggml_tensor * out_reg = nullptr; // I32 [n_out]   with crop: the outputs inside the region
++    ggml_tensor * iota    = nullptr; // F32 [R]       with dyn: row indices
++    ggml_tensor * nxt     = nullptr; // F32 [R-1]     with dyn: tokens of rows 1..R-1 (the batch drafts)
++
++    // already filled attention inputs of the main model (cache of the MTP layers)
++    const ggml_tensor * k_idxs_src = nullptr;
++    const ggml_tensor * mask_src   = nullptr;
++
++    // per cache cell: whether it holds MTP layer KV
++    std::vector<uint8_t> * valid;
++};
++
+ class llm_graph_input_pos : public llm_graph_input_i {
+ public:
+     llm_graph_input_pos(uint32_t n_pos_per_embd) : n_pos_per_embd(n_pos_per_embd) {}
+@@ -819,6 +868,8 @@ struct llm_graph_params {
+ 
+     llm_graph_result * res;
+ 
++    std::vector<uint8_t> * mtp_valid = nullptr;
++
+     // return true if the "other" params would result in a graph with the same topology as with the current params
+     //   having the same topology allows us to reuse the graph in some cases
+     bool allow_reuse(const llm_graph_params & other) const {
+@@ -885,6 +936,7 @@ struct llm_graph_params {
+             cparams.embeddings              == other.cparams.embeddings              &&
+             cparams.embeddings_nextn        == other.cparams.embeddings_nextn        &&
+             cparams.embeddings_nextn_masked == other.cparams.embeddings_nextn_masked &&
++            cparams.mtp_fused               == other.cparams.mtp_fused               &&
+             cparams.causal_attn             == other.cparams.causal_attn             &&
+             arch  == other.arch  &&
+             gtype == other.gtype &&
+@@ -947,6 +999,10 @@ public:
+     ggml_tensor * t_embd_pooled = nullptr;
+     ggml_tensor * t_h_nextn     = nullptr; // [n_embd, n_outputs] hidden state before final output norm
+ 
++    // fused MTP: I32 [nH] draft of each block; the first mtp_n_out_reg are for the last outputs of the ubatch
++    std::vector<ggml_tensor *> t_mtp_drafts;
++    int32_t mtp_n_out_reg = 0;
++
+     std::vector<ggml_tensor *> t_layer_inp;
+ 
+     std::vector<ggml_tensor *> t_sampled;
+@@ -1045,6 +1101,8 @@ struct llm_graph_context {
+ 
+     llm_graph_result * res;
+ 
++    std::vector<uint8_t> * mtp_valid;
++
+     ggml_context * ctx0 = nullptr;
+     ggml_cgraph  * gf   = nullptr;
+ 
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index 97e0cee70e42c4960619008063e0705ea4c2fd31..29fdfae7cce601621a0e49d1ca8996b3f8e05435 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -2814,6 +2814,9 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params,
+                     if (hparams.n_layer_nextn > 0 && hparams.n_layer() > 0 && hparams.router_layer < 0) {
+                         if (params.ctx_type == LLAMA_CONTEXT_TYPE_MTP) {
+                             filter = [&](uint32_t il) { return il >= hparams.n_layer(); };
++                        } else if (arch == LLM_ARCH_QWEN3 && layers[hparams.n_layer()].nextn.eh_proj) {
++                            // fused MTP: the MTP layer KV lives in the context of the main model
++                            filter = nullptr;
+                         } else {
+                             filter = [&](uint32_t il) { return il <  hparams.n_layer(); };
+                         }
+diff --git a/src/models/models.h b/src/models/models.h
+index 387a4adcb239db69d72349ee57e2fbfe2db04e5a..14e5c874fa67b524b1b8f352620a0080f5f9264f 100644
+--- a/src/models/models.h
++++ b/src/models/models.h
+@@ -583,6 +583,16 @@ struct llama_model_qwen3 : public llama_model_base {
+ 
+     struct graph : public llm_graph_context {
+         graph(const llama_model & model, const llm_graph_params & params);
++
++        // chain of MTP blocks in the main model graph (fused MTP)
++        void build_mtp(
++                const llama_model & model,
++                llm_graph_input_mtp * inp,
++                ggml_tensor * h_all,
++                ggml_tensor * inp_pos,
++                const llama_kv_cache_context * mctx_mtp,
++                ggml_tensor * k_idxs,
++                ggml_tensor * v_idxs);
+     };
+ 
+     std::unique_ptr<llm_graph_context> build_arch_graph(const llm_graph_params & params) const override;
+diff --git a/src/models/qwen3.cpp b/src/models/qwen3.cpp
+index 17880fb8371e8b78ce22f398ef2d00508360ccf1..ec004f16790484cbc2ef30d342f121636ae4824b 100644
+--- a/src/models/qwen3.cpp
++++ b/src/models/qwen3.cpp
+@@ -1,5 +1,8 @@
+ #include "models.h"
+ 
++#include "llama-kv-cache.h"
++#include "llama-kv-cache-iswa.h"
++
+ void llama_model_qwen3::load_arch_hparams(llama_model_loader & ml) {
+     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+ 
+@@ -25,7 +28,7 @@ void llama_model_qwen3::load_arch_hparams(llama_model_loader & ml) {
+     }
+ }
+ 
+-void llama_model_qwen3::load_arch_tensors(llama_model_loader &) {
++void llama_model_qwen3::load_arch_tensors(llama_model_loader & ml) {
+     LLAMA_LOAD_LOCALS;
+ 
+     tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
+@@ -62,9 +65,37 @@ void llama_model_qwen3::load_arch_tensors(llama_model_loader &) {
+         // files have no such tensor and keep running with the bare frequencies.
+         layer.rope_freqs = create_tensor(tn(LLM_TENSOR_ROPE_FREQS, "weight", i), {n_rot/2}, TENSOR_NOT_REQUIRED | (i != 0 ? TENSOR_DUPLICATED : 0));
+     }
++
++    // MTP blocks: a regular Qwen3 layer + the nextn projection and norms, the output head is shared
++    const int mtp_flags = ml.load_mtp ? 0 : TENSOR_SKIP;
++
++    for (int i = n_layer; i < n_layer_all; ++i) {
++        auto & layer = layers[i];
++
++        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, mtp_flags);
++
++        create_tensor_qkv(layer, i, n_embd, n_embd_head_k * n_head, n_embd_gqa, n_embd_gqa, mtp_flags);
++        layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd_head_k * n_head, n_embd}, mtp_flags);
++
++        layer.attn_k_norm = create_tensor(tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), {n_embd_head_k}, mtp_flags);
++        layer.attn_q_norm = create_tensor(tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), {n_embd_head_k}, mtp_flags);
++
++        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, mtp_flags);
++        layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff}, mtp_flags);
++        layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, mtp_flags);
++        layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, mtp_flags);
++
++        layer.nextn.eh_proj          = create_tensor(tn(LLM_TENSOR_NEXTN_EH_PROJ,          "weight", i), {2 * n_embd, n_embd}, mtp_flags);
++        layer.nextn.enorm            = create_tensor(tn(LLM_TENSOR_NEXTN_ENORM,            "weight", i), {n_embd}, mtp_flags);
++        layer.nextn.hnorm            = create_tensor(tn(LLM_TENSOR_NEXTN_HNORM,            "weight", i), {n_embd}, mtp_flags);
++        layer.nextn.shared_head_norm = create_tensor(tn(LLM_TENSOR_NEXTN_SHARED_HEAD_NORM, "weight", i), {n_embd}, mtp_flags);
++    }
+ }
+ 
+ std::unique_ptr<llm_graph_context> llama_model_qwen3::build_arch_graph(const llm_graph_params & params) const {
++    if (params.gtype == LLM_GRAPH_TYPE_DECODER_MTP) {
++        throw std::runtime_error("qwen3: MTP runs only fused into the main graph (llama_set_mtp_fused), not as a draft context");
++    }
+     return std::make_unique<graph>(*this, params);
+ }
+ 
+@@ -88,7 +119,35 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
+     auto * inp_attn      = use_iswa ? nullptr : build_attn_inp_kv();
+     auto * inp_attn_iswa = use_iswa ? build_attn_inp_kv_iswa() : nullptr;
+ 
+-    ggml_tensor * inp_out_ids = build_inp_out_ids();
++    // fused MTP: the input is created for any ubatch, since it tracks the cells with MTP layer KV
++    const int n_mtp = cparams.mtp_fused > 0 && n_layer_nextn > 0 && model.layers[n_layer].nextn.eh_proj
++        ? std::min<int>(cparams.mtp_fused, n_layer_nextn) : 0;
++
++    llm_graph_input_mtp * inp_mtp = nullptr;
++    if (n_mtp > 0) {
++        GGML_ASSERT(mtp_valid);
++
++        auto inp = std::make_unique<llm_graph_input_mtp>(n_mtp, (int32_t) cparams.mtp_rows, mtp_valid);
++        inp->layout = llm_mtp_layout::make(ubatch, n_outputs, n_mtp, inp->r_max);
++
++        const bool swa_mtp = hparams.is_swa(n_layer);
++        if (use_iswa) {
++            inp->k_idxs_src = swa_mtp ? inp_attn_iswa->get_k_idxs_swa() : inp_attn_iswa->get_k_idxs();
++            inp->mask_src   = swa_mtp ? inp_attn_iswa->self_kq_mask_swa : inp_attn_iswa->self_kq_mask;
++        } else {
++            inp->k_idxs_src = inp_attn->get_k_idxs();
++            inp->mask_src   = inp_attn->self_kq_mask;
++        }
++
++        inp_mtp = (llm_graph_input_mtp *) res->add_input(std::move(inp));
++    }
++
++    // the MTP rows are needed after the last layer too, so with them the outputs are selected after the norm,
++    // and the last layer runs on the MTP region (crop) or on all rows
++    const int32_t n_mtp_rows = inp_mtp ? inp_mtp->layout.R : 0;
++    const bool    mtp_crop   = inp_mtp && inp_mtp->layout.crop;
++
++    ggml_tensor * inp_out_ids = mtp_crop ? nullptr : build_inp_out_ids();
+ 
+     for (int il = 0; il < n_layer; ++il) {
+         res->t_layer_inp[il] = inpL;
+@@ -142,10 +201,14 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
+                         Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
+             }
+         }
+-        if (il == n_layer - 1 && inp_out_ids) {
++        if (il == n_layer - 1 && inp_out_ids && n_mtp_rows == 0) {
+             cur   = ggml_get_rows(ctx0,   cur, inp_out_ids);
+             inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
+         }
++        if (il == n_layer - 1 && mtp_crop) {
++            cur   = ggml_view_2d(ctx0, cur,   n_embd, n_mtp_rows, cur->nb[1],   (n_tokens - n_mtp_rows)*cur->nb[1]);
++            inpSA = ggml_view_2d(ctx0, inpSA, n_embd, n_mtp_rows, inpSA->nb[1], (n_tokens - n_mtp_rows)*inpSA->nb[1]);
++        }
+         ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inpSA);
+         cb(ffn_inp, "ffn_inp", il);
+ 
+@@ -177,6 +240,15 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
+             model.output_norm, NULL,
+             LLM_NORM_RMS, -1);
+ 
++    ggml_tensor * h_all = cur;
++    if (mtp_crop) {
++        inp_mtp->out_reg = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n_outputs);
++        ggml_set_input(inp_mtp->out_reg);
++        cur = ggml_get_rows(ctx0, cur, inp_mtp->out_reg);
++    } else if (n_mtp_rows > 0) {
++        cur = ggml_get_rows(ctx0, cur, inp_out_ids);
++    }
++
+     cb(cur, "result_norm", -1);
+     res->t_embd = cur;
+ 
+@@ -187,4 +259,206 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
+     res->t_logits = cur;
+ 
+     ggml_build_forward_expand(gf, cur);
++
++    if (n_mtp_rows > 0) {
++        const bool swa_mtp = hparams.is_swa(n_layer);
++        if (use_iswa) {
++            build_mtp(model, inp_mtp, h_all, inp_pos,
++                    swa_mtp ? inp_attn_iswa->mctx->get_swa()       : inp_attn_iswa->mctx->get_base(),
++                    swa_mtp ? inp_attn_iswa->get_k_idxs_swa()      : inp_attn_iswa->get_k_idxs(),
++                    swa_mtp ? inp_attn_iswa->get_v_idxs_swa()      : inp_attn_iswa->get_v_idxs());
++        } else {
++            build_mtp(model, inp_mtp, h_all, inp_pos, inp_attn->mctx, inp_attn->get_k_idxs(), inp_attn->get_v_idxs());
++        }
++    }
++}
++
++// Block k for row j (base p = pos_j) takes h^k_p and the embedding of the token at position p+k+1 and predicts
++// token p+k+2; h^0 is the main model output after the norm, h^{k+1} the output of block k after its norm.
++// The KV of block k for base p lies in the cell of row j, so a seq_rm rollback removes it with the main model.
++void llama_model_qwen3::graph::build_mtp(
++        const llama_model & model,
++        llm_graph_input_mtp * inp,
++        ggml_tensor * h_all,
++        ggml_tensor * inp_pos,
++        const llama_kv_cache_context * mctx_mtp,
++        ggml_tensor * k_idxs,
++        ggml_tensor * v_idxs) {
++    const auto & L = inp->layout;
++
++    const int64_t R  = L.R;
++    const int64_t nH = L.dyn || L.h_row >= 0 ? 1 : 0; // number of H rows
++    const int64_t j0 = n_tokens - R;
++
++    const int64_t n_embd_head = hparams.n_embd_head_v();
++
++    // flash attention: V is not transposed, one index per row
++    GGML_ASSERT(v_idxs->ne[0] == k_idxs->ne[0]);
++
++    ggml_tensor * h     = ggml_view_2d(ctx0, h_all, n_embd, R, h_all->nb[1], (h_all->ne[1] - R)*h_all->nb[1]);
++    ggml_tensor * pos   = ggml_view_1d(ctx0, inp_pos, R, j0*ggml_element_size(inp_pos));
++    ggml_tensor * k_idx = ggml_view_1d(ctx0, k_idxs,  R, j0*ggml_element_size(k_idxs));
++    ggml_tensor * v_idx = ggml_view_1d(ctx0, v_idxs,  R, j0*ggml_element_size(v_idxs));
++
++    inp->mask = ggml_new_tensor_4d(ctx0, inp->mask_src->type, inp->mask_src->ne[0], R, 1, 1);
++    ggml_set_input(inp->mask);
++
++    ggml_tensor * am     = ggml_argmax(ctx0, res->t_logits);
++    ggml_tensor * h_idx  = nullptr; // I32 [1] row H
++    ggml_tensor * pos_h  = nullptr;
++    ggml_tensor * mask_h = nullptr;
++    ggml_tensor * a_f    = nullptr; // with dyn: F32 [1] row H
++
++    // [iota == a - c]
++    auto row_is = [&](int c) {
++        ggml_tensor * d = ggml_scale_bias(ctx0, ggml_sub(ctx0, inp->iota, a_f), 1.0f, (float) c);
++        return ggml_scale_bias(ctx0, ggml_step(ctx0, ggml_abs(ctx0, d)), -1.0f, 1.0f);
++    };
++
++    if (L.dyn) {
++        // batch [token, drafts]: H is the row where the argmax of the main model first differs
++        // from the next draft (or the last row if all are accepted)
++        inp->iota = ggml_new_tensor_1d(ctx0, GGML_TYPE_F32, R);
++        inp->nxt  = ggml_new_tensor_1d(ctx0, GGML_TYPE_F32, R - 1);
++        ggml_set_input(inp->iota);
++        ggml_set_input(inp->nxt);
++
++        ggml_tensor * miss = ggml_sub(ctx0, ggml_view_1d(ctx0, ggml_cast(ctx0, am, GGML_TYPE_F32), R - 1, 0), inp->nxt);
++        miss = ggml_step(ctx0, ggml_abs(ctx0, miss));
++
++        a_f   = ggml_sum(ctx0, ggml_scale_bias(ctx0, ggml_step(ctx0, ggml_cumsum(ctx0, miss)), -1.0f, 1.0f));
++        h_idx = ggml_cast(ctx0, a_f, GGML_TYPE_I32);
++
++        pos_h  = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, ggml_reshape_2d(ctx0, pos, 1, R), h_idx), 1);
++        mask_h = ggml_cast(ctx0, ggml_get_rows(ctx0, inp->mask, h_idx), inp->mask->type);
++    } else {
++        if (nH > 0) {
++            inp->h_idx = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, 1);
++            ggml_set_input(inp->h_idx);
++            h_idx = inp->h_idx;
++        }
++        if (nH > 0 && nH < R) {
++            inp->pos_h  = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, 1);
++            inp->mask_h = ggml_new_tensor_4d(ctx0, inp->mask_src->type, inp->mask_src->ne[0], 1, 1, 1);
++            ggml_set_input(inp->pos_h);
++            ggml_set_input(inp->mask_h);
++            pos_h  = inp->pos_h;
++            mask_h = inp->mask_h;
++        }
++    }
++
++    // chain: the argmax of the main model over its outputs, then the block drafts on the H rows (outputs)
++    ggml_tensor * pool_chain = ggml_get_rows(ctx0, model.tok_embd, am);
++
++    // the MTP layers apply rope like the main ones: the model has one rope_freqs for all layers (nullptr if absent)
++    ggml_tensor * rope_factors = model.get_rope_factors(cparams, 0);
++
++    // with dyn the drafts are written out for all rows of the batch: row H gets its own, the others LLAMA_TOKEN_NULL
++    res->mtp_n_out_reg = L.dyn ? R : nH;
++
++    for (int k = 0; k < inp->n_mtp; ++k) {
++        const int il = n_layer + k;
++        const auto & layer = model.layers[il];
++
++        ggml_tensor * tok = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, R);
++        ggml_tensor * sel = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, R);
++        ggml_set_input(tok);
++        ggml_set_input(sel);
++        inp->tok.push_back(tok);
++        inp->sel.push_back(sel);
++
++        if (L.dyn && k > 0) {
++            // rows a-k+1..a precede row H: their token past the accepted edge comes from its chain,
++            // row a-c needs the draft of block k-1-c (in the pool after the batch and the argmax)
++            ggml_tensor * s = ggml_cast(ctx0, sel, GGML_TYPE_F32);
++            for (int c = 0; c < k; ++c) {
++                ggml_tensor * m = row_is(c);
++                s = ggml_add(ctx0, ggml_mul(ctx0, s, ggml_scale_bias(ctx0, m, -1.0f, 1.0f)), ggml_scale(ctx0, m, (float) (2*R + k - 1 - c)));
++            }
++            sel = ggml_cast(ctx0, s, GGML_TYPE_I32);
++        }
++
++        ggml_tensor * emb = ggml_get_rows(ctx0, model.tok_embd, tok);
++        emb = ggml_get_rows(ctx0, ggml_concat(ctx0, emb, pool_chain, 1), sel);
++
++        ggml_tensor * e_norm = build_norm(emb, layer.nextn.enorm, NULL, LLM_NORM_RMS, il);
++        ggml_tensor * h_norm = build_norm(h,   layer.nextn.hnorm, NULL, LLM_NORM_RMS, il);
++
++        ggml_tensor * x = build_lora_mm(layer.nextn.eh_proj, ggml_concat(ctx0, e_norm, h_norm, 0), nullptr);
++        cb(x, "mtp_eh_proj", il);
++
++        // the last block needs its output only on the H rows, on the others only its K/V
++        const bool part = k == inp->n_mtp - 1 && nH < R;
++
++        ggml_tensor * cur = build_norm(x, layer.attn_norm, NULL, LLM_NORM_RMS, il);
++        {
++            GGML_ASSERT(layer.wqkv == nullptr && layer.wq_b == nullptr && layer.wk_b == nullptr && layer.wv_b == nullptr);
++
++            ggml_tensor * Kcur = ggml_reshape_3d(ctx0, build_lora_mm(layer.wk, cur, layer.wk_s), n_embd_head, n_head_kv, R);
++            ggml_tensor * Vcur = ggml_reshape_3d(ctx0, build_lora_mm(layer.wv, cur, layer.wv_s), n_embd_head, n_head_kv, R);
++
++            Kcur = build_norm(Kcur, layer.attn_k_norm, NULL, LLM_NORM_RMS, il);
++            Kcur = ggml_rope_ext(ctx0, Kcur, pos, rope_factors,
++                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
++                    ext_factor, attn_factor, beta_fast, beta_slow);
++
++            ggml_build_forward_expand(gf, mctx_mtp->cpy_k(ctx0, Kcur, k_idx, il));
++            ggml_build_forward_expand(gf, mctx_mtp->cpy_v(ctx0, Vcur, v_idx, il));
++
++            if (part && nH == 0) {
++                break;
++            }
++
++            ggml_tensor * q_in = part ? ggml_get_rows(ctx0, cur, h_idx) : cur;
++            const int64_t n_q  = part ? nH : R;
++
++            ggml_tensor * Qcur = ggml_reshape_3d(ctx0, build_lora_mm(layer.wq, q_in, layer.wq_s), n_embd_head, n_head, n_q);
++            Qcur = build_norm(Qcur, layer.attn_q_norm, NULL, LLM_NORM_RMS, il);
++            Qcur = ggml_rope_ext(ctx0, Qcur, part ? pos_h : pos, rope_factors,
++                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
++                    ext_factor, attn_factor, beta_fast, beta_slow);
++
++            cur = build_attn_mha(Qcur, mctx_mtp->get_k(ctx0, il), mctx_mtp->get_v(ctx0, il),
++                    nullptr, part ? mask_h : inp->mask, nullptr, nullptr, 0, 1.0f/sqrtf(float(n_embd_head)), il);
++            cur = build_lora_mm(layer.wo, cur, layer.wo_s);
++
++            if (part) {
++                x = ggml_get_rows(ctx0, x, h_idx);
++            }
++        }
++
++        ggml_tensor * ffn_inp = ggml_add(ctx0, cur, x);
++
++        cur = build_norm(ffn_inp, layer.ffn_norm, NULL, LLM_NORM_RMS, il);
++        cur = build_ffn(cur,
++                layer.ffn_up,   NULL, layer.ffn_up_s,
++                layer.ffn_gate, NULL, layer.ffn_gate_s,
++                layer.ffn_down, NULL, layer.ffn_down_s,
++                NULL,
++                LLM_FFN_SILU, LLM_FFN_PAR, il);
++        cur = ggml_add(ctx0, cur, ffn_inp);
++
++        h = build_norm(cur, layer.nextn.shared_head_norm, NULL, LLM_NORM_RMS, il);
++        cb(h, "mtp_out", il);
++
++        if (nH > 0) {
++            ggml_tensor * logits = build_lora_mm(model.output, part ? h : ggml_get_rows(ctx0, h, h_idx), model.output_s);
++            ggml_tensor * draft  = ggml_argmax(ctx0, logits);
++            cb(draft, "mtp_draft", il);
++
++            ggml_tensor * out = draft;
++            if (L.dyn) {
++                out = ggml_scale_bias(ctx0, ggml_cast(ctx0, draft, GGML_TYPE_F32), 1.0f, 1.0f);
++                out = ggml_cast(ctx0, ggml_scale_bias(ctx0, ggml_mul(ctx0, row_is(0), out), 1.0f, (float) LLAMA_TOKEN_NULL), GGML_TYPE_I32);
++            }
++            res->t_mtp_drafts.push_back(out);
++            ggml_build_forward_expand(gf, out);
++
++            if (k + 1 < inp->n_mtp) {
++                pool_chain = ggml_concat(ctx0, pool_chain, ggml_get_rows(ctx0, model.tok_embd, draft), 1);
++            }
++        } else {
++            ggml_build_forward_expand(gf, h);
++        }
++    }
+ }
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index b72a2bfecc35f1b2e0204d255eefa9dc82e44135..2b9957e7b82ee3480d6eaeaa50482c413740a5de 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -277,6 +277,8 @@ llama_build_and_test(test-model-resolution.cpp)
+ # the test serves its repos from an httplib server, and the library links it privately
+ target_link_libraries(test-model-resolution PRIVATE cpp-httplib)
+ 
++llama_build_and_test(test-mtp-rope-factors.cpp)
++
+ if (NOT LLAMA_SANITIZE_ADDRESS AND NOT GGML_SCHED_NO_REALLOC)
+   # TODO: repair known memory leaks
+   llama_build_and_test(test-opt.cpp)
+diff --git a/tests/test-mtp-rope-factors.cpp b/tests/test-mtp-rope-factors.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..70cbaa5bfad84c16b70fd54e49095c1c9449bfa8
+--- /dev/null
++++ b/tests/test-mtp-rope-factors.cpp
+@@ -0,0 +1,175 @@
++// Fused MTP of a Qwen3 model with rope_freqs: the MTP blocks must rotate with the same frequencies as the main
++// layers. rope_freqs = 2.0 for every dimension is the same rotation as freq_scale = 0.5 (both are exact powers
++// of two), so a model with the tensor and the same model without it, run with freq_scale = 0.5, must give the
++// same logits and the same MTP drafts bit for bit.
++
++#include "llama.h"
++#include "ggml.h"
++#include "gguf.h"
++
++#include <cstdint>
++#include <cstdio>
++#include <cstring>
++#include <random>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++#define CHECK(condition) do { if (!(condition)) throw std::runtime_error("check failed: " #condition); } while (false)
++
++static const int64_t n_vocab = 64, n_embd = 64, n_head = 4, n_head_kv = 2, n_ff = 128, n_layer = 2, n_nextn = 1;
++static const int64_t n_head_dim = n_embd / n_head;
++static const int     n_drafts   = 1;
++
++static void write_model(const std::string & path, bool rope_freqs) {
++    gguf_context * gguf = gguf_init_empty();
++    gguf_set_val_str(gguf, "general.architecture", "qwen3");
++    gguf_set_val_str(gguf, "tokenizer.ggml.model", "no_vocab");
++    gguf_set_val_u32(gguf, "qwen3.vocab_size",                      n_vocab);
++    gguf_set_val_u32(gguf, "qwen3.context_length",                  256);
++    gguf_set_val_u32(gguf, "qwen3.embedding_length",                n_embd);
++    gguf_set_val_u32(gguf, "qwen3.feed_forward_length",             n_ff);
++    gguf_set_val_u32(gguf, "qwen3.block_count",                     n_layer + n_nextn);
++    gguf_set_val_u32(gguf, "qwen3.nextn_predict_layers",            n_nextn);
++    gguf_set_val_u32(gguf, "qwen3.attention.head_count",            n_head);
++    gguf_set_val_u32(gguf, "qwen3.attention.head_count_kv",         n_head_kv);
++    gguf_set_val_f32(gguf, "qwen3.attention.layer_norm_rms_epsilon", 1e-6f);
++    gguf_set_val_f32(gguf, "qwen3.rope.freq_base",                  10000.0f);
++
++    ggml_init_params params = { 64 * 1024 * 1024, nullptr, false };
++    ggml_context * ctx = ggml_init(params);
++    std::mt19937 rng(7);
++    std::normal_distribution<float> dist(0.0f, 0.3f);
++    auto add = [&](const std::string & name, std::vector<int64_t> ne, float fill = 0.0f) {
++        ggml_tensor * t = ne.size() == 1 ? ggml_new_tensor_1d(ctx, GGML_TYPE_F32, ne[0])
++                                         : ggml_new_tensor_2d(ctx, GGML_TYPE_F32, ne[0], ne[1]);
++        ggml_set_name(t, name.c_str());
++        float * data = (float *) t->data;
++        for (int64_t i = 0; i < ggml_nelements(t); ++i) {
++            data[i] = fill != 0.0f ? fill : dist(rng);
++        }
++        gguf_add_tensor(gguf, t);
++    };
++
++    add("token_embd.weight",  {n_embd, n_vocab});
++    add("output_norm.weight", {n_embd}, 1.0f);
++    if (rope_freqs) {
++        add("rope_freqs.weight", {n_head_dim / 2}, 2.0f);
++    }
++    for (int il = 0; il < n_layer + n_nextn; ++il) {
++        const std::string p = "blk." + std::to_string(il) + ".";
++        add(p + "attn_norm.weight",   {n_embd}, 1.0f);
++        add(p + "attn_q.weight",      {n_embd, n_head * n_head_dim});
++        add(p + "attn_k.weight",      {n_embd, n_head_kv * n_head_dim});
++        add(p + "attn_v.weight",      {n_embd, n_head_kv * n_head_dim});
++        add(p + "attn_output.weight", {n_head * n_head_dim, n_embd});
++        add(p + "attn_q_norm.weight", {n_head_dim}, 1.0f);
++        add(p + "attn_k_norm.weight", {n_head_dim}, 1.0f);
++        add(p + "ffn_norm.weight",    {n_embd}, 1.0f);
++        add(p + "ffn_gate.weight",    {n_embd, n_ff});
++        add(p + "ffn_down.weight",    {n_ff, n_embd});
++        add(p + "ffn_up.weight",      {n_embd, n_ff});
++        if (il >= n_layer) {
++            add(p + "nextn.eh_proj.weight",          {2 * n_embd, n_embd});
++            add(p + "nextn.enorm.weight",            {n_embd}, 1.0f);
++            add(p + "nextn.hnorm.weight",            {n_embd}, 1.0f);
++            add(p + "nextn.shared_head_norm.weight", {n_embd}, 1.0f);
++        }
++    }
++
++    CHECK(gguf_write_to_file(gguf, path.c_str(), false));
++    gguf_free(gguf);
++    ggml_free(ctx);
++}
++
++// greedy generation: the logits of every step and the MTP drafts of every step
++static void run(const std::string & path, float freq_scale, std::vector<float> & logits, std::vector<llama_token> & drafts) {
++    auto mparams = llama_model_default_params();
++    mparams.load_mtp = true;
++    llama_model * model = llama_model_load_from_file(path.c_str(), mparams);
++    CHECK(model != nullptr);
++
++    auto cparams = llama_context_default_params();
++    cparams.n_ctx           = 128;
++    cparams.n_batch         = 32;
++    cparams.n_ubatch        = 32;
++    cparams.n_seq_max       = 1;
++    cparams.n_threads       = 2;
++    cparams.n_threads_batch = 2;
++    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
++    cparams.rope_freq_scale = freq_scale;
++    llama_context * ctx = llama_init_from_model(model, cparams);
++    CHECK(ctx != nullptr);
++    llama_set_mtp_fused(ctx, n_drafts);
++    CHECK(llama_get_mtp_fused(ctx) == n_drafts);
++
++    std::vector<llama_token> cur;
++    for (int i = 0; i < 16; ++i) {
++        cur.push_back((5 * i + 1) % n_vocab);
++    }
++    llama_pos pos = 0;
++    llama_batch batch = llama_batch_init(32, 0, 1);
++    for (int step = 0; step < 24; ++step) {
++        batch.n_tokens = 0;
++        for (size_t i = 0; i < cur.size(); ++i) {
++            batch.token[i] = cur[i]; batch.pos[i] = pos + i; batch.n_seq_id[i] = 1; batch.seq_id[i][0] = 0;
++            batch.logits[i] = i + 1 == cur.size();
++            batch.n_tokens++;
++        }
++        CHECK(llama_decode(ctx, batch) == 0);
++        pos += cur.size();
++
++        const float * l = llama_get_logits_ith(ctx, -1);
++        logits.insert(logits.end(), l, l + n_vocab);
++        llama_token best = 0;
++        for (int t = 1; t < n_vocab; ++t) {
++            if (l[t] > l[best]) {
++                best = t;
++            }
++        }
++        llama_token d[n_drafts];
++        const int32_t n = llama_get_mtp_drafts_ith(ctx, -1, d, n_drafts);
++        CHECK(n == n_drafts);
++        drafts.insert(drafts.end(), d, d + n);
++        cur = { best };
++    }
++    llama_batch_free(batch);
++    llama_free(ctx);
++    llama_model_free(model);
++}
++
++int main() {
++    try {
++        llama_log_set([](ggml_log_level, const char *, void *) {}, nullptr);
++        llama_backend_init();
++
++        const std::string with_freqs = "test-mtp-rope-freqs.gguf", without = "test-mtp-rope-plain.gguf";
++        write_model(with_freqs, true);
++        write_model(without,    false);
++
++        std::vector<float> logits_a, logits_b;
++        std::vector<llama_token> drafts_a, drafts_b;
++        run(with_freqs, 0.0f, logits_a, drafts_a); // freq_scale from the model: 1.0, rope_freqs 2.0
++        run(without,    0.5f, logits_b, drafts_b); // no rope_freqs, freq_scale 0.5
++        std::remove(with_freqs.c_str());
++        std::remove(without.c_str());
++
++        CHECK(logits_a.size() == logits_b.size());
++        CHECK(std::memcmp(logits_a.data(), logits_b.data(), logits_a.size() * sizeof(float)) == 0);
++        size_t n_diff = 0;
++        for (size_t i = 0; i < drafts_a.size(); ++i) {
++            n_diff += drafts_a[i] != drafts_b[i];
++        }
++        if (n_diff != 0) {
++            std::fprintf(stderr, "MTP drafts differ in %zu of %zu steps\n", n_diff, drafts_a.size());
++            return 1;
++        }
++
++        llama_backend_free();
++        std::printf("PASS: logits and %zu MTP drafts equal with rope_freqs 2.0 and with freq_scale 0.5\n", drafts_a.size());
++        return 0;
++    } catch (const std::exception & e) {
++        std::fprintf(stderr, "%s\n", e.what());
++        return 1;
++    }
++}

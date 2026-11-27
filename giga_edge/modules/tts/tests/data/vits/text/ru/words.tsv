@@ -1,0 +1,486 @@
+# Service words of the language, by section. Tab-separated: the section, the word in lower case, and for "govern"
+# the cases a number after the word takes, the most likely first (letters N G D A I P).
+#   govern           a preposition or another word that governs a number after it: "к 3" -> "к трём"
+#   transparent      a word between a governing word and a number: "нет даже 100 рублей"
+#   nominative_date  after it a date without a preposition is a nominative: "сегодня 5 мая"
+#   weekday          a day of the week; a date after it and a comma is a genitive: "понедельник, 5 мая"
+#   counting         before a number that counts and does not order: "остался 1 этаж"
+#   mass             before a number of grams: "масса 1500 г."
+#   version          before numbers with dots of a version: "версия 1.2"
+#   garbage          a Latin word of a model's answer that is left out: "null"
+#   day_part         after a number of hours: "в 2 ночи"
+#   function         a word that is never the noun of a number: "и", "плюс"
+#   title            before it a Latin capital is not a Roman numeral: "Мистер X"
+#   word             a word in capitals read as a word, not letter by letter: "НЕ", "СТОП"
+#   with_from        before "с" that means "from": "скидка с 5000 рублей" is the genitive, not "работает с 5000"
+#   person           an adjective that stands for persons after a governed number: "осмотрел 21 больного"
+#   feminine         a feminine noun in "-ь" besides those in "-ость", "-есть", "-знь": "1 модель" -> "одн+а"
+#   distance         after a unit of distance or time it is a distance: "в 3600 км отсюда" -> the prepositional
+#   persons          before a number without a noun it counts persons: "нас было 3" -> "тр+ое"
+govern	в	AP
+govern	во	AP
+govern	на	AP
+govern	за	AI
+govern	под	AI
+govern	подо	AI
+govern	по	ADP
+govern	с	GI
+govern	со	GI
+govern	о	PA
+govern	об	PA
+govern	обо	PA
+govern	при	P
+govern	через	A
+govern	сквозь	A
+govern	про	A
+govern	к	D
+govern	ко	D
+govern	благодаря	D
+govern	согласно	D
+govern	над	I
+govern	перед	I
+govern	передо	I
+govern	между	I
+govern	без	G
+govern	безо	G
+govern	вдоль	G
+govern	вместо	G
+govern	вне	G
+govern	внутри	G
+govern	возле	G
+govern	вокруг	G
+govern	для	G
+govern	до	G
+govern	из	G
+govern	изо	G
+govern	кроме	G
+govern	мимо	G
+govern	около	G
+govern	от	G
+govern	ото	G
+govern	после	G
+govern	против	G
+govern	среди	G
+govern	у	G
+govern	более	G
+govern	менее	G
+govern	больше	G
+govern	меньше	G
+govern	свыше	G
+govern	порядка	G
+govern	нет	G
+govern	хватает	G
+govern	хватит	G
+govern	хватило	G
+govern	хватало	G
+govern	выше	G
+govern	ниже	G
+govern	дороже	G
+govern	дешевле	G
+govern	старше	G
+govern	младше	G
+govern	моложе	G
+govern	длиннее	G
+govern	короче	G
+govern	дольше	G
+govern	смотри	A
+govern	смотрите	A
+govern	равен	D
+govern	равна	D
+govern	равно	D
+govern	равны	D
+govern	недостаёт	G
+govern	недостает	G
+# "достаточно 19 % раствора"
+govern	достаточно	G
+govern	недостаточно	G
+# "в размере 5 тысяч рублей", "в количестве 10 штук"; "на сумму 854 руб. 31 коп." is a name of the sum in the
+# nominative (norm_blind3, Грамота № 314218)
+govern	размере	G
+govern	количестве	G
+govern	на сумму	N
+# "в пределах 72–86 сантиметров"
+govern	пределах	G
+transparent	даже
+transparent	лишь
+transparent	только
+transparent	всего
+transparent	почти
+transparent	примерно
+transparent	приблизительно
+transparent	уже
+transparent	ещё
+transparent	еще
+transparent	ровно
+nominative_date	сегодня
+nominative_date	завтра
+nominative_date	вчера
+nominative_date	послезавтра
+nominative_date	позавчера
+nominative_date	сейчас
+nominative_date	это
+nominative_date	был
+nominative_date	была
+nominative_date	было
+nominative_date	будет
+nominative_date	наступил
+nominative_date	наступила
+nominative_date	наступило
+nominative_date	наступит
+counting	есть
+counting	остался
+counting	осталось
+counting	осталась
+counting	остались
+counting	имеется
+counting	имеются
+counting	всего
+mass	масса
+mass	массы
+mass	массой
+mass	вес
+mass	веса
+mass	весом
+mass	весит
+mass	весят
+version	версия
+version	версии
+version	версию
+version	версией
+version	v
+version	ver
+garbage	null
+garbage	undefined
+garbage	nan
+garbage	none
+garbage	nil
+day_part	утра
+day_part	вечера
+day_part	дня
+day_part	ночи
+weekday	понедельник
+weekday	вторник
+weekday	среда
+weekday	четверг
+weekday	пятница
+weekday	суббота
+weekday	воскресенье
+weekday	пн
+weekday	вт
+weekday	ср
+weekday	чт
+weekday	пт
+weekday	сб
+weekday	вс
+function	и
+function	или
+function	а
+function	но
+function	не
+function	ни
+function	же
+function	ли
+function	бы
+function	да
+function	что
+function	как
+function	это
+function	уже
+function	ещё
+function	еще
+function	даже
+function	только
+function	лишь
+function	всего
+function	почти
+function	примерно
+function	ровно
+function	них
+function	нас
+function	вас
+function	плюс
+function	минус
+function	равно
+function	разделить
+function	умножить
+title	мистер
+title	мисс
+title	миссис
+title	господин
+title	госпожа
+title	агент
+title	сеньор
+title	мадам
+title	месье
+title	синьор
+word	не
+word	да
+word	нет
+word	все
+word	всё
+word	стоп
+word	два
+word	три
+word	ок
+word	он
+word	она
+word	они
+word	оно
+word	мы
+word	вы
+word	ты
+word	я
+word	это
+word	так
+word	вот
+word	ещё
+word	еще
+word	уже
+word	как
+word	что
+word	где
+word	кто
+word	или
+word	но
+word	для
+word	про
+word	без
+word	при
+word	над
+word	под
+word	из
+word	на
+word	за
+word	до
+word	от
+word	по
+word	со
+word	во
+word	ко
+word	об
+word	был
+word	была
+word	было
+word	были
+word	быть
+word	есть
+word	мой
+word	моя
+word	мое
+word	моё
+word	твой
+word	его
+word	её
+word	ее
+word	их
+word	сам
+word	сама
+word	тут
+word	там
+word	вон
+word	нас
+word	вас
+word	ним
+word	ней
+word	них
+word	всем
+word	всех
+word	весь
+word	вся
+word	если
+word	когда
+word	чем
+word	кем
+word	тем
+word	том
+word	той
+word	тот
+word	эта
+word	эти
+word	этот
+word	один
+word	одна
+word	одно
+word	пять
+word	шесть
+word	семь
+word	сто
+word	сорок
+word	ура
+word	ого
+word	ага
+word	эй
+word	ну
+word	ой
+word	ах
+word	ох
+word	алло
+word	внимание
+word	важно
+word	срочно
+word	новое
+word	новый
+word	скидка
+word	акция
+word	хит
+word	топ
+word	супер
+word	мега
+word	сейчас
+word	здесь
+word	всегда
+word	никогда
+word	ноль
+word	одни
+version	п
+version	пункт
+version	раздел
+version	ст
+version	гл
+with_from	скидка
+with_from	скидки
+with_from	скидке
+with_from	скидку
+with_from	скидкой
+with_from	скидок
+with_from	скидкам
+with_from	скидками
+with_from	скидках
+with_from	сдача
+with_from	сдачи
+with_from	сдаче
+with_from	сдачу
+with_from	сдачей
+with_from	налог
+with_from	налога
+with_from	налогу
+with_from	налогом
+with_from	налоге
+with_from	налоги
+with_from	налогов
+with_from	налогам
+with_from	налогами
+with_from	налогах
+with_from	процент
+with_from	процента
+with_from	проценты
+with_from	процентов
+with_from	комиссия
+with_from	комиссии
+with_from	комиссию
+with_from	комиссией
+with_from	пошлина
+with_from	пошлины
+with_from	пошлину
+with_from	пошлиной
+with_from	сбор
+with_from	сбора
+with_from	сборы
+with_from	сборов
+with_from	кэшбэк
+with_from	кешбэк
+with_from	вычет
+with_from	вычета
+with_from	вычеты
+with_from	вычетов
+person	больного
+person	больных
+person	рабочего
+person	рабочих
+person	часового
+person	часовых
+person	дежурного
+person	дежурных
+person	учёного
+person	учёных
+person	пленного
+person	пленных
+person	раненого
+person	раненых
+person	взрослого
+person	взрослых
+person	знакомого
+person	знакомых
+person	прохожего
+person	прохожих
+person	военного
+person	военных
+person	служащего
+person	служащих
+person	отдыхающего
+person	отдыхающих
+person	пострадавшего
+person	пострадавших
+person	заключённого
+person	заключённых
+person	задержанного
+person	задержанных
+person	подозреваемого
+person	подозреваемых
+person	обвиняемого
+person	обвиняемых
+person	погибшего
+person	погибших
+person	заболевшего
+person	заболевших
+person	выжившего
+person	выживших
+person	ученого
+person	ученых
+person	заключенного
+person	заключенных
+feminine	модель
+feminine	цель
+feminine	часть
+feminine	площадь
+feminine	запись
+feminine	очередь
+feminine	деталь
+feminine	дверь
+feminine	кровать
+feminine	тетрадь
+feminine	сеть
+feminine	ночь
+feminine	степень
+feminine	область
+feminine	ступень
+feminine	печь
+feminine	рысь
+feminine	лошадь
+feminine	мышь
+feminine	вещь
+feminine	речь
+feminine	помощь
+feminine	роль
+feminine	соль
+feminine	боль
+feminine	ткань
+feminine	грань
+feminine	связь
+feminine	сельдь
+feminine	дробь
+feminine	медь
+feminine	сталь
+feminine	мебель
+feminine	постель
+feminine	пыль
+feminine	тень
+feminine	цепь
+feminine	щель
+feminine	полночь
+feminine	смесь
+feminine	мазь
+feminine	нить
+feminine	ось
+feminine	пристань
+distance	от
+distance	отсюда
+distance	оттуда
+distance	ходьбы
+distance	езды
+distance	пути
+distance	полёта
+distance	полета
+persons	нас
+persons	вас
+persons	их

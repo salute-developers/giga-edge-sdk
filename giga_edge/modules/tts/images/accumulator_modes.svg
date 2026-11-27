@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="310" viewBox="0 0 760 310" role="img" aria-labelledby="title">
+  <title id="title">With stream false the accumulator gives the whole phrase at its end; with stream true it waits for min_lead_ms of audio and then gives the pieces as they arrive</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .out{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .none{fill:none;stroke:#8c959f;stroke-dasharray:3 3}
+    .ev{fill:#fff1e5;stroke:#bc4c00}
+    .orange{fill:#bc4c00}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .row{stroke:#d0d7de}
+    .c{font-size:12px}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="309" rx="12"/>
+
+  <path class="edge" d="M190 30H716"/>
+  <text class="note" x="722" y="34">ticks</text>
+
+  <text class="b" x="24" y="72" style="font-size:12px">chunks of the phrase</text>
+  <text class="note small" x="24" y="88">audio_chunk, is_eos</text>
+  <rect class="val" x="190" y="56" width="90" height="32" rx="16"/><text class="mono mid c" x="235" y="76">c1</text>
+  <rect class="val" x="295" y="56" width="90" height="32" rx="16"/><text class="mono mid c" x="340" y="76">c2</text>
+  <rect class="val" x="400" y="56" width="90" height="32" rx="16"/><text class="mono mid c" x="445" y="76">c3</text>
+  <rect class="val" x="505" y="56" width="90" height="32" rx="16"/><text class="mono mid c" x="550" y="76">c4</text>
+  <rect class="val" x="610" y="56" width="90" height="32" rx="16"/><text class="mono mid c" x="655" y="76">c5</text>
+  <rect class="ev" x="627" y="94" width="56" height="20" rx="4"/><text class="mono mid orange" x="655" y="108" style="font-size:11px">is_eos</text>
+
+  <line class="row" x1="24" y1="126" x2="736" y2="126"/>
+
+  <text class="mono b" x="24" y="158" style="font-size:12px">stream: false</text>
+  <text class="note small" x="24" y="174">the whole phrase</text>
+  <rect class="none" x="190" y="142" width="90" height="32" rx="16"/><text class="note small mid" x="235" y="162">no samples</text>
+  <rect class="none" x="295" y="142" width="90" height="32" rx="16"/><text class="note small mid" x="340" y="162">no samples</text>
+  <rect class="none" x="400" y="142" width="90" height="32" rx="16"/><text class="note small mid" x="445" y="162">no samples</text>
+  <rect class="none" x="505" y="142" width="90" height="32" rx="16"/><text class="note small mid" x="550" y="162">no samples</text>
+  <rect class="out" x="610" y="142" width="90" height="32" rx="16"/><text class="mono mid c" x="655" y="162">c1 … c5</text>
+  <text class="note small mid" x="655" y="190">is_last</text>
+
+  <line class="row" x1="24" y1="204" x2="736" y2="204"/>
+
+  <text class="mono b" x="24" y="230" style="font-size:12px">stream: true</text>
+  <text class="note small" x="24" y="246">with min_lead_ms</text>
+  <rect class="none" x="190" y="220" width="90" height="32" rx="16"/><text class="note small mid" x="235" y="240">no samples</text>
+  <rect class="none" x="295" y="220" width="90" height="32" rx="16"/><text class="note small mid" x="340" y="240">no samples</text>
+  <rect class="out" x="400" y="220" width="90" height="32" rx="16"/><text class="mono mid c" x="445" y="240">c1 c2 c3</text>
+  <rect class="out" x="505" y="220" width="90" height="32" rx="16"/><text class="mono mid c" x="550" y="240">c4</text>
+  <rect class="out" x="610" y="220" width="90" height="32" rx="16"/><text class="mono mid c" x="655" y="240">c5</text>
+  <text class="note small mid" x="445" y="268">the lead is collected</text>
+  <text class="note small mid" x="655" y="268">is_last</text>
+
+  <text class="note mid" x="380" y="294">The node gives a value on every tick; until there is something to give, it has no samples.</text>
+</svg>

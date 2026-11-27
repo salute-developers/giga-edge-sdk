@@ -1,0 +1,651 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 11/12] llama: load models through a bounded reader
+
+llama_model_reader and llama_model_load_from_reader let the caller supply
+the model bytes through callbacks; mmap and the model loader read through
+them. A reader must return exactly the requested length. Async upload
+buffers are freed when loading throws.
+
+test-model-reader covers invalid readers, short reads in the header and in
+the middle of a tensor, cancellation through progress_callback, logits
+bitwise equal to the file load, no reads after the load, n_gpu_layers 0 and
+999, and the vocab-only run.
+---
+ include/llama.h             |  11 +++
+ src/llama-mmap.cpp          |  71 +++++++++++++++---
+ src/llama-mmap.h            |   4 +
+ src/llama-model-loader.cpp  |  91 ++++++++++++++--------
+ src/llama-model-loader.h    |   4 +-
+ src/llama.cpp               |  25 ++++--
+ tests/CMakeLists.txt        |   9 +++
+ tests/test-model-reader.cpp | 146 ++++++++++++++++++++++++++++++++++++
+ 8 files changed, 312 insertions(+), 49 deletions(-)
+ create mode 100644 tests/test-model-reader.cpp
+
+diff --git a/include/llama.h b/include/llama.h
+index 87be02e0e76738b0cef01e3fbe7e6f5ef276bcfc..4c14d6cc4b073df5bb85a3689c2b645452c9fd4e 100644
+--- a/include/llama.h
++++ b/include/llama.h
+@@ -516,6 +516,17 @@ extern "C" {
+               struct llama_model_params   params),
+             "use llama_model_load_from_file instead");
+ 
++    // read is called only inside llama_model_load_from_reader and must return exactly length; a short read fails the load
++    struct llama_model_reader {
++        size_t (*read)(void * userdata, void * output, uint64_t offset, size_t length);
++        void * userdata;
++        uint64_t size;
++    };
++
++    LLAMA_API struct llama_model * llama_model_load_from_reader(
++            const struct llama_model_reader * reader,
++                  struct llama_model_params   params);
++
+     // Load a model from a file
+     // If the file is split into multiple parts, the file name must follow this pattern: <name>-%05d-of-%05d.gguf
+     // If the split file name does not follow this pattern, use llama_model_load_from_splits
+diff --git a/src/llama-mmap.cpp b/src/llama-mmap.cpp
+index 045489df7a356f859669976837a0559e73f242b9..64322e5f86b649ec1a7f3b8703a1d4a6c5460a78 100644
+--- a/src/llama-mmap.cpp
++++ b/src/llama-mmap.cpp
+@@ -1,4 +1,5 @@
+ #include "llama-mmap.h"
++#include "llama.h"
+ 
+ #include "llama-impl.h"
+ 
+@@ -414,15 +415,24 @@ llama_file::llama_file(const char * fname, const char * mode, const bool use_dir
+ 
+ llama_file::llama_file(FILE * file) : pimpl(std::make_unique<impl>(file)) {}
+ 
++llama_file::llama_file(const llama_model_reader & source) : reader(std::make_unique<llama_model_reader>(source)) {
++    if (!reader->read || reader->size > SIZE_MAX) {
++        throw std::runtime_error("invalid model reader");
++    }
++}
++
+ llama_file::~llama_file() = default;
+ 
+-size_t llama_file::tell() const { return pimpl->tell(); }
+-size_t llama_file::size() const { return pimpl->size; }
++size_t llama_file::tell() const { return reader ? reader_offset : pimpl->tell(); }
++size_t llama_file::size() const { return reader ? reader->size : pimpl->size; }
+ 
+-size_t llama_file::read_alignment() const { return pimpl->read_alignment(); }
+-bool llama_file::has_direct_io() const { return pimpl->has_direct_io(); }
++size_t llama_file::read_alignment() const { return reader ? 1 : pimpl->read_alignment(); }
++bool llama_file::has_direct_io() const { return !reader && pimpl->has_direct_io(); }
+ 
+ int llama_file::file_id() const {
++    if (reader) {
++        throw std::runtime_error("callback readers cannot be memory mapped");
++    }
+ #ifdef _WIN32
+     return _fileno(pimpl->fp);
+ #else
+@@ -437,18 +447,57 @@ int llama_file::file_id() const {
+ #endif
+ }
+ 
+-void llama_file::seek(size_t offset, int whence) const { pimpl->seek(offset, whence); }
+-void llama_file::read_raw(void * ptr, size_t len) { pimpl->read_raw(ptr, len); }
++void llama_file::seek(size_t offset, int whence) const {
++    if (!reader) {
++        pimpl->seek(offset, whence);
++        return;
++    }
++    if (whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END) {
++        throw std::runtime_error("invalid reader seek origin");
++    }
++    const size_t base = whence == SEEK_SET ? 0 : whence == SEEK_CUR ? reader_offset : size();
++    if (offset > size() - base) {
++        throw std::runtime_error("model reader seek out of bounds");
++    }
++    reader_offset = base + offset;
++}
++
++void llama_file::read_raw(void * ptr, size_t len) {
++    if (!reader) {
++        pimpl->read_raw(ptr, len);
++        return;
++    }
++    if (len > size() - reader_offset || (len && reader->read(reader->userdata, ptr, reader_offset, len) != len)) {
++        throw std::runtime_error("model reader failed or returned a short read");
++    }
++    reader_offset += len;
++}
+ #ifdef _WIN32
+-void llama_file::read_raw_unsafe(void * ptr, size_t len) { pimpl->read_raw(ptr, len); }
++void llama_file::read_raw_unsafe(void * ptr, size_t len) { read_raw(ptr, len); }
+ #else
+-void llama_file::read_raw_unsafe(void * ptr, size_t len) { pimpl->read_raw_unsafe(ptr, len); }
++void llama_file::read_raw_unsafe(void * ptr, size_t len) {
++    if (reader) {
++        read_raw(ptr, len);
++    } else {
++        pimpl->read_raw_unsafe(ptr, len);
++    }
++}
+ #endif
+ 
+-uint32_t llama_file::read_u32() { return pimpl->read_u32(); }
++uint32_t llama_file::read_u32() {
++    uint32_t value;
++    read_raw(&value, sizeof(value));
++    return value;
++}
++
++void llama_file::write_raw(const void * ptr, size_t len) const {
++    if (reader) {
++        throw std::runtime_error("model callback is read-only");
++    }
++    pimpl->write_raw(ptr, len);
++}
+ 
+-void llama_file::write_raw(const void * ptr, size_t len) const { pimpl->write_raw(ptr, len); }
+-void llama_file::write_u32(uint32_t val) const { pimpl->write_u32(val); }
++void llama_file::write_u32(uint32_t val) const { write_raw(&val, sizeof(val)); }
+ 
+ // llama_mmap
+ 
+diff --git a/src/llama-mmap.h b/src/llama-mmap.h
+index 6c6393d5734da646fed120064f05168fb46d7a30..60c25c856d445258a2be9b315b15ad409e24fda0 100644
+--- a/src/llama-mmap.h
++++ b/src/llama-mmap.h
+@@ -9,6 +9,7 @@
+ // staging buffer size for direct I/O reads, 64MB works well for NVMe drives
+ #define LLAMA_DIRECT_IO_BUFFER_SIZE (64 * 1024 * 1024)
+ 
++struct llama_model_reader;
+ struct llama_file;
+ struct llama_mmap;
+ struct llama_mlock;
+@@ -20,6 +21,7 @@ using llama_mlocks = std::vector<std::unique_ptr<llama_mlock>>;
+ struct llama_file {
+     llama_file(const char * fname, const char * mode, bool use_direct_io = false);
+     llama_file(FILE * file);
++    llama_file(const llama_model_reader & reader);
+     ~llama_file();
+ 
+     size_t tell() const;
+@@ -42,6 +44,8 @@ struct llama_file {
+ private:
+     struct impl;
+     std::unique_ptr<impl> pimpl;
++    std::unique_ptr<llama_model_reader> reader;
++    mutable size_t reader_offset = 0;
+ };
+ 
+ struct llama_mmap {
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 6cc0b202887a6002375538be4080ec55d18d750a..21aab815328053c6afd55023cde37dc82fc0aed2 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -541,7 +541,8 @@ llama_model_loader::llama_model_loader(
+         bool no_alloc,
+         bool load_mtp,
+         const llama_model_kv_override * param_overrides_p,
+-        const llama_model_tensor_buft_override * param_tensor_buft_overrides_p)
++        const llama_model_tensor_buft_override * param_tensor_buft_overrides_p,
++        const llama_model_reader * reader)
+         : metadata(meta), set_tensor_data(set_tensor_data), set_tensor_data_ud(set_tensor_data_ud) {
+     int trace = 0;
+     if (getenv("LLAMA_TRACE")) {
+@@ -559,7 +560,7 @@ llama_model_loader::llama_model_loader(
+     this->use_mmap      = load_mode == LLAMA_LOAD_MODE_MMAP || load_mode == LLAMA_LOAD_MODE_MMAP_MLOCK || load_mode == LLAMA_LOAD_MODE_AUTO;
+     this->use_direct_io = load_mode == LLAMA_LOAD_MODE_DIRECT_IO;
+ 
+-    if (!fname.empty()) {
++    if (!fname.empty() || reader) {
+         // Load the main GGUF
+         struct ggml_context * ctx = NULL;
+         struct gguf_init_params params = {
+@@ -567,7 +568,14 @@ llama_model_loader::llama_model_loader(
+             /*.ctx      = */ &ctx,
+         };
+ 
+-        metadata_ptr.reset(gguf_init_from_file(fname.c_str(), params));
++        if (reader) {
++            use_reader = true;
++            use_mmap = false;
++            use_direct_io = false;
++            metadata_ptr.reset(gguf_init_from_callback(reader->read, reader->userdata, 64 * 1024, reader->size, params));
++        } else {
++            metadata_ptr.reset(gguf_init_from_file(fname.c_str(), params));
++        }
+         metadata = metadata_ptr.get();
+         if (metadata == nullptr) {
+             throw std::runtime_error(format("%s: failed to load model from %s", __func__, fname.c_str()));
+@@ -576,7 +584,7 @@ llama_model_loader::llama_model_loader(
+         get_key(llm_kv(LLM_KV_GENERAL_ARCHITECTURE), arch_name, false);
+         llm_kv = LLM_KV(llm_arch_from_string(arch_name));
+ 
+-        files.emplace_back(new llama_file(fname.c_str(), "rb", use_direct_io));
++        files.emplace_back(reader ? new llama_file(*reader) : new llama_file(fname.c_str(), "rb", use_direct_io));
+         contexts.emplace_back(ctx);
+ 
+         // Save tensors data offset of the main file.
+@@ -597,6 +605,9 @@ llama_model_loader::llama_model_loader(
+ 
+         // Load additional GGML contexts
+         if (n_split > 1) {
++            if (reader) {
++                throw std::runtime_error("split models are not supported by a single reader");
++            }
+             // make sure the main file is loaded first
+             uint16_t idx = 0;
+             const std::string kv_split_no = llm_kv(LLM_KV_SPLIT_NO);
+@@ -1518,11 +1529,33 @@ bool llama_model_loader::load_all_data(
+     // Buffer size: balance between memory usage and I/O efficiency
+     const size_t buffer_size = alignment != 1 ? LLAMA_DIRECT_IO_BUFFER_SIZE + 2 * alignment : 1 * 1024 * 1024;
+ 
+-    std::vector<ggml_backend_buffer_t> host_buffers;
+-    std::vector<ggml_backend_event_t> events;
++    struct upload_resources {
++        std::vector<ggml_backend_buffer_t> buffers;
++        std::vector<ggml_backend_event_t> events;
++        ggml_backend_t backend = nullptr;
++
++        void reset() {
++            for (auto * event : events) {
++                ggml_backend_event_synchronize(event);
++                ggml_backend_event_free(event);
++            }
++            events.clear();
++            for (auto * buffer : buffers) {
++                ggml_backend_buffer_free(buffer);
++            }
++            buffers.clear();
++            ggml_backend_free(backend);
++            backend = nullptr;
++        }
++
++        ~upload_resources() { reset(); }
++    } upload;
+     std::vector<void *> host_ptrs;
+-    size_t buffer_idx = 0; // buffer to use for async loads
+-    ggml_backend_t upload_backend = [&](const char * func) -> ggml_backend_t {
++    upload.buffers.reserve(n_buffers);
++    upload.events.reserve(n_buffers);
++    host_ptrs.reserve(n_buffers);
++    size_t buffer_idx = 0;
++    upload.backend = [&](const char * func) -> ggml_backend_t {
+         if (use_mmap || check_tensors) {
+             return nullptr;
+         }
+@@ -1573,7 +1606,7 @@ bool llama_model_loader::load_all_data(
+                 return nullptr;
+             }
+ 
+-            host_buffers.emplace_back(buf);
++            upload.buffers.emplace_back(buf);
+             host_ptrs.emplace_back(ggml_backend_buffer_get_base(buf));
+ 
+             auto * event = ggml_backend_event_new(dev);
+@@ -1583,7 +1616,7 @@ bool llama_model_loader::load_all_data(
+                 return nullptr;
+             }
+ 
+-            events.emplace_back(event);
++            upload.events.emplace_back(event);
+         }
+ 
+         ggml_backend_t backend = ggml_backend_dev_init(dev, nullptr);
+@@ -1596,11 +1629,11 @@ bool llama_model_loader::load_all_data(
+         return backend;
+     }(__func__);
+ 
+-    if (upload_backend) {
++    if (upload.backend) {
+         LLAMA_LOG_DEBUG("%s: using async uploads for device %s, buffer type %s, backend %s\n", __func__,
+-            ggml_backend_dev_name(ggml_backend_get_device(upload_backend)),
++            ggml_backend_dev_name(ggml_backend_get_device(upload.backend)),
+             ggml_backend_buft_name(ggml_backend_buffer_get_type(bufs.at(0))),
+-            ggml_backend_name(upload_backend));
++            ggml_backend_name(upload.backend));
+     }
+ 
+     std::vector<ggml_tensor *> tensors;
+@@ -1680,8 +1713,7 @@ bool llama_model_loader::load_all_data(
+                     }));
+                 }
+             } else {
+-                // If upload_backend is valid load the tensor in chunks to pinned memory and upload the buffers asynchronously to the GPU.
+-                if (upload_backend) {
++                if (upload.backend) {
+                     size_t offset = weight->offs;
+                     alignment = file->read_alignment();
+                     size_t aligned_offset = offset & ~(alignment - 1);
+@@ -1702,7 +1734,7 @@ bool llama_model_loader::load_all_data(
+                         uintptr_t ptr_dest_aligned = (reinterpret_cast<uintptr_t>(host_ptrs[buffer_idx]) + alignment - 1) & ~(alignment - 1);
+ 
+                         // Wait for previous upload to complete before reusing buffer
+-                        ggml_backend_event_synchronize(events[buffer_idx]);
++                        ggml_backend_event_synchronize(upload.events[buffer_idx]);
+ 
+                         // Read aligned chunk from file
+                         file->read_raw_unsafe(reinterpret_cast<void *>(ptr_dest_aligned), read_size);
+@@ -1723,9 +1755,9 @@ bool llama_model_loader::load_all_data(
+                         }
+ 
+                         // Async upload actual data to GPU
+-                        ggml_backend_tensor_set_async(upload_backend, cur,
++                        ggml_backend_tensor_set_async(upload.backend, cur,
+                                                       reinterpret_cast<void *>(ptr_data), data_read, data_to_copy);
+-                        ggml_backend_event_record(events[buffer_idx], upload_backend);
++                        ggml_backend_event_record(upload.events[buffer_idx], upload.backend);
+ 
+                         data_read += data_to_copy;
+                         bytes_read += read_size;
+@@ -1735,10 +1767,17 @@ bool llama_model_loader::load_all_data(
+                     }
+                 } else {
+                     // scoped to one tensor so only one staging buffer is alive at a time
+-                    std::vector<no_init<uint8_t>> read_buf(n_size);
++                    const auto buft = ggml_backend_buffer_get_type(cur->buffer);
++                    const auto dev = ggml_backend_buft_get_device(buft);
++                    const bool can_stream = dev && buft == ggml_backend_dev_buffer_type(dev);
++                    const size_t read_size = use_reader && can_stream && !check_tensors ? std::min(n_size, buffer_size) : n_size;
++                    std::vector<no_init<uint8_t>> read_buf(read_size);
+                     file->seek(weight->offs, SEEK_SET);
+-                    file->read_raw(read_buf.data(), n_size);
+-                    ggml_backend_tensor_set(cur, read_buf.data(), 0, n_size);
++                    for (size_t offset = 0; offset < n_size; offset += read_size) {
++                        const size_t count = std::min(read_size, n_size - offset);
++                        file->read_raw(read_buf.data(), count);
++                        ggml_backend_tensor_set(cur, read_buf.data(), offset, count);
++                    }
+                     if (check_tensors && !ggml_validate_row_data(cur->type, read_buf.data(), n_size)) {
+                         throw std::runtime_error(format("tensor '%s' has invalid data", ggml_get_name(cur)));
+                     }
+@@ -1749,15 +1788,7 @@ bool llama_model_loader::load_all_data(
+         size_done += n_size;
+     }
+ 
+-    // free temporary resources used for async uploads
+-    for (auto * event : events) {
+-        ggml_backend_event_synchronize(event);
+-        ggml_backend_event_free(event);
+-    }
+-    for (auto * buf : host_buffers) {
+-        ggml_backend_buffer_free(buf);
+-    }
+-    ggml_backend_free(upload_backend);
++    upload.reset();
+ 
+     // check validation results
+     bool validation_failed = false;
+diff --git a/src/llama-model-loader.h b/src/llama-model-loader.h
+index 9e51d0ce750503788d2236b4892b8fa3e409b478..fa3b7c94e635839ef4c6a74939e595cd104a9030 100644
+--- a/src/llama-model-loader.h
++++ b/src/llama-model-loader.h
+@@ -79,6 +79,7 @@ struct llama_model_loader {
+     size_t   n_bytes    = 0;
+ 
+     bool use_mmap = false;
++    bool use_reader = false;
+     bool use_direct_io = false;
+     bool check_tensors;
+     bool no_alloc;
+@@ -183,7 +184,8 @@ struct llama_model_loader {
+         bool no_alloc,
+         bool load_mtp,
+         const llama_model_kv_override * param_overrides_p,
+-        const llama_model_tensor_buft_override * param_tensor_buft_overrides_p);
++        const llama_model_tensor_buft_override * param_tensor_buft_overrides_p,
++        const llama_model_reader * reader = nullptr);
+ 
+     template<typename T>
+     typename std::enable_if<std::is_integral<T>::value, bool>::type
+diff --git a/src/llama.cpp b/src/llama.cpp
+index 9beb14841f9867f771c484a1a90882ee06481649..b6703a00e05777dc7132b0f31bd0c9a9bb00e7dc 100644
+--- a/src/llama.cpp
++++ b/src/llama.cpp
+@@ -314,10 +314,10 @@ static bool llama_prepare_model_devices(const llama_model_params & params, llama
+ 
+ // Returns 0 on success, -1 on error, and -2 on cancellation via llama_progress_callback
+ static std::pair<int, llama_model *> llama_model_load(struct gguf_context * metadata, llama_model_set_tensor_data_t set_tensor_data, void * set_tensor_data_ud,
+-        const std::string & fname, std::vector<std::string> & splits, FILE * file, llama_model_params & params) {
++        const std::string & fname, std::vector<std::string> & splits, FILE * file, llama_model_params & params, const llama_model_reader * reader) {
+     try {
+         llama_model_loader ml(metadata, set_tensor_data, set_tensor_data_ud, fname, splits, file, params.load_mode,
+-            params.check_tensors, params.no_alloc, params.load_mtp, params.kv_overrides, params.tensor_buft_overrides);
++            params.check_tensors, params.no_alloc, params.load_mtp, params.kv_overrides, params.tensor_buft_overrides, reader);
+ 
+         ml.lazy.mode = params.lazy_mode;
+ 
+@@ -384,9 +384,10 @@ static struct llama_model * llama_model_load_from_file_impl(
+         const std::string & path_model,
+         std::vector<std::string> & splits,
+         FILE * file,
+-        struct llama_model_params params) {
++        struct llama_model_params params,
++        const llama_model_reader * reader = nullptr) {
+     {
+-        int n_sources_defined = 0;
++        int n_sources_defined = reader != nullptr ? 1 : 0;
+         if (metadata != nullptr) {
+             n_sources_defined++;
+         }
+@@ -397,7 +398,7 @@ static struct llama_model * llama_model_load_from_file_impl(
+             n_sources_defined++;
+         }
+         if (n_sources_defined != 1) {
+-            LLAMA_LOG_ERROR("%s: exactly one out metadata, path_model, and file must be defined\n", __func__);
++            LLAMA_LOG_ERROR("%s: exactly one model source must be defined\n", __func__);
+             return nullptr;
+         }
+     }
+@@ -426,7 +427,7 @@ static struct llama_model * llama_model_load_from_file_impl(
+         };
+     }
+ 
+-    const auto [status, model] = llama_model_load(metadata, set_tensor_data, set_tensor_data_ud, path_model, splits, file, params);
++    const auto [status, model] = llama_model_load(metadata, set_tensor_data, set_tensor_data_ud, path_model, splits, file, params, reader);
+     GGML_ASSERT(status <= 0);
+     if (status < 0) {
+         if (status == -1) {
+@@ -444,6 +445,17 @@ static struct llama_model * llama_model_load_from_file_impl(
+     return model;
+ }
+ 
++struct llama_model * llama_model_load_from_reader(
++        const struct llama_model_reader * reader, struct llama_model_params params) {
++    if (!reader || !reader->read || !reader->size || reader->size > SIZE_MAX) {
++        return nullptr;
++    }
++    params.load_mode = LLAMA_LOAD_MODE_NONE;
++    params.lazy_mode = LLAMA_LAZY_MODE_OFF;
++    std::vector<std::string> splits;
++    return llama_model_load_from_file_impl(nullptr, nullptr, nullptr, {}, splits, nullptr, params, reader);
++}
++
+ struct llama_model * llama_model_init_from_user(
+         struct gguf_context * metadata,
+         llama_model_set_tensor_data_t set_tensor_data,
+@@ -618,4 +630,3 @@ const char * llama_print_system_info(void) {
+ 
+     return s.c_str();
+ }
+-
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 2b9957e7b82ee3480d6eaeaa50482c413740a5de..ef9ee6a6a09524687c3cab6c38b206c1b531a52d 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -194,6 +194,7 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
+     # llama_build_and_test(test-double-float.cpp) # SLOW
+ 
+     llama_build(test-llama-archs.cpp)
++    llama_build(test-model-reader.cpp)
+ 
+     set(MODEL_DIR "${CMAKE_CURRENT_BINARY_DIR}/test-models/")
+     file(MAKE_DIRECTORY "${MODEL_DIR}")
+@@ -208,6 +209,14 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
+         FIXTURES_SETUP generate-models
+     )
+ 
++    llama_test(
++        test-model-reader
++        LABEL main
++        ARGS "${MODEL_DIR}/qwen3-dense.gguf"
++    )
++    set_tests_properties(test-model-reader PROPERTIES FIXTURES_REQUIRED generate-models)
++    llama_test(test-model-reader NAME test-model-reader-vocab ARGS ${PROJECT_SOURCE_DIR}/models/ggml-vocab-gpt-2.gguf --vocab-only)
++
+     # Test recurrent-state rollback across all architectures, using the generated dummy models
+     llama_test(
+         test-recurrent-state-rollback
+diff --git a/tests/test-model-reader.cpp b/tests/test-model-reader.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2787828103c8a681e9d1ef53cbf2977180902db7
+--- /dev/null
++++ b/tests/test-model-reader.cpp
+@@ -0,0 +1,146 @@
++// llama_model_load_from_reader: the same model as from the file (parameters, vocabulary, bitwise logits),
++// no reads after the load, and clean failures: invalid reader, short read in the header and in the middle
++// of a tensor, cancellation through progress_callback. Runs with n_gpu_layers 0 and 999.
++//
++// usage: test-model-reader <model.gguf> [--vocab-only]
++
++#include "llama.h"
++#include "ggml-backend.h"
++
++#include <cstdint>
++#include <cstdio>
++#include <cstring>
++#include <fstream>
++#include <iterator>
++#include <limits>
++#include <memory>
++#include <stdexcept>
++#include <vector>
++
++#define CHECK(condition) do { if (!(condition)) throw std::runtime_error("check failed: " #condition); } while (false)
++
++struct source {
++    const std::vector<char> & bytes;
++    size_t fail_at         = std::numeric_limits<size_t>::max(); // reads past this offset return 0
++    bool   closed          = false;                              // every read returns 0 and is counted
++    bool   saw_tensor_read = false;                              // a read longer than a GGUF header chunk
++    size_t calls           = 0;
++};
++
++static size_t read_source(void * userdata, void * output, uint64_t offset, size_t length) {
++    auto & s = *static_cast<source *>(userdata);
++    ++s.calls;
++    s.saw_tensor_read |= length > 64 * 1024;
++    if (s.closed || offset > s.bytes.size() || length > s.bytes.size() - offset ||
++            offset > s.fail_at || length > s.fail_at - offset) {
++        return 0;
++    }
++    std::memcpy(output, s.bytes.data() + offset, length);
++    return length;
++}
++
++using model_ptr   = std::unique_ptr<llama_model,   decltype(&llama_model_free)>;
++using context_ptr = std::unique_ptr<llama_context, decltype(&llama_free)>;
++
++static void run(const char * path, const std::vector<char> & bytes, int gpu_layers, bool vocab_only) {
++    auto params = llama_model_default_params();
++    params.n_gpu_layers      = gpu_layers;
++    params.vocab_only        = vocab_only;
++    params.load_mode         = LLAMA_LOAD_MODE_NONE;
++    params.progress_callback = [](float, void *) { return true; };
++
++    // invalid readers
++    CHECK(llama_model_load_from_reader(nullptr, params) == nullptr);
++    const llama_model_reader no_read{nullptr, nullptr, bytes.size()};
++    CHECK(llama_model_load_from_reader(&no_read, params) == nullptr);
++
++    source src{bytes};
++    llama_model_reader reader{read_source, &src, bytes.size()};
++    const llama_model_reader no_size{read_source, &src, 0};
++    CHECK(llama_model_load_from_reader(&no_size, params) == nullptr);
++
++    model_ptr model(llama_model_load_from_reader(&reader, params), llama_model_free);
++    CHECK(model != nullptr);
++    CHECK(vocab_only || src.saw_tensor_read);
++
++    // the reader is not touched after the load: from here every read would fail
++    src.closed = true;
++    const size_t calls_after_load = src.calls;
++
++    model_ptr plain(llama_model_load_from_file(path, params), llama_model_free);
++    CHECK(plain != nullptr);
++    CHECK(llama_model_n_params(model.get()) == llama_model_n_params(plain.get()));
++    CHECK(llama_model_n_embd(model.get())   == llama_model_n_embd(plain.get()));
++    CHECK(llama_vocab_n_tokens(llama_model_get_vocab(model.get())) ==
++          llama_vocab_n_tokens(llama_model_get_vocab(plain.get())));
++
++    if (!vocab_only) {
++        auto cparams = llama_context_default_params();
++        cparams.n_ctx           = 32;
++        cparams.n_batch         = 1;
++        cparams.n_threads       = 1;
++        cparams.n_threads_batch = 1;
++        context_ptr ctx_reader(llama_init_from_model(model.get(), cparams), llama_free);
++        context_ptr ctx_plain (llama_init_from_model(plain.get(), cparams), llama_free);
++        CHECK(ctx_reader && ctx_plain);
++
++        llama_token token = 1;
++        CHECK(llama_decode(ctx_reader.get(), llama_batch_get_one(&token, 1)) == 0);
++        CHECK(llama_decode(ctx_plain.get(),  llama_batch_get_one(&token, 1)) == 0);
++        const size_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model.get()));
++        CHECK(std::memcmp(llama_get_logits(ctx_reader.get()), llama_get_logits(ctx_plain.get()), n_vocab * sizeof(float)) == 0);
++    }
++    CHECK(src.calls == calls_after_load);
++
++    // short read in the header
++    source header_failure{bytes, 0};
++    reader.userdata = &header_failure;
++    CHECK(llama_model_load_from_reader(&reader, params) == nullptr);
++
++    if (!vocab_only) {
++        // short read in the middle of the tensor data; repeated, so that leaked upload resources would pile up
++        for (int attempt = 0; attempt < 3; ++attempt) {
++            source tensor_failure{bytes, bytes.size() / 2};
++            reader.userdata = &tensor_failure;
++            CHECK(llama_model_load_from_reader(&reader, params) == nullptr);
++            CHECK(tensor_failure.saw_tensor_read);
++        }
++
++        // cancellation through the progress callback
++        source cancellation{bytes};
++        reader.userdata = &cancellation;
++        params.progress_callback = [](float progress, void *) { return progress < 0.05f; };
++        CHECK(llama_model_load_from_reader(&reader, params) == nullptr);
++        CHECK(cancellation.calls > 0);
++    }
++
++    std::printf("PASS n_gpu_layers=%d vocab_only=%d\n", gpu_layers, vocab_only);
++}
++
++int main(int argc, char ** argv) {
++    try {
++        CHECK(argc == 2 || (argc == 3 && std::strcmp(argv[2], "--vocab-only") == 0));
++        const bool vocab_only = argc == 3;
++
++        llama_log_set([](ggml_log_level, const char *, void *) {}, nullptr);
++        ggml_backend_load_all();
++        llama_backend_init();
++
++        std::ifstream file(argv[1], std::ios::binary);
++        const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
++        CHECK(!bytes.empty());
++
++        for (const int gpu_layers : {0, 999}) {
++            if (vocab_only && gpu_layers != 0) {
++                continue;
++            }
++            run(argv[1], bytes, gpu_layers, vocab_only);
++        }
++
++        llama_backend_free();
++        return 0;
++    } catch (const std::exception & e) {
++        std::fprintf(stderr, "%s\n", e.what());
++        return 1;
++    }
++}

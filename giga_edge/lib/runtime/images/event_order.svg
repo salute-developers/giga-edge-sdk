@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="255" viewBox="0 0 760 255" role="img" aria-labelledby="title">
+  <title id="title">An event pushed between two inputs of one tick is processed after the whole tick</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#1a7f37"/>
+    </marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#bc4c00"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .ev{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .orange{fill:#bc4c00}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .gedge{fill:none;stroke:#1a7f37;stroke-width:1.5;marker-end:url(#ag)}
+    .oedge{fill:none;stroke:#bc4c00;stroke-width:1.5;marker-end:url(#ao)}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="254" rx="12"/>
+
+  <text class="note" x="24" y="66">host calls</text>
+  <text class="note" x="24" y="186">graph runs</text>
+  <path class="edge" d="M140 30H636"/>
+  <text class="note" x="646" y="34">time</text>
+
+  <rect class="val" x="140" y="44" width="150" height="36" rx="18"/>
+  <text class="mono mid" x="215" y="66" style="font-size:12px">Push(input_1)</text>
+  <rect class="ev" x="320" y="44" width="120" height="36" rx="18"/>
+  <text class="mono mid orange" x="380" y="66" style="font-size:12px">PushEvent</text>
+  <rect class="val" x="470" y="44" width="150" height="36" rx="18"/>
+  <text class="mono mid" x="545" y="66" style="font-size:12px">Push(input_2)</text>
+
+  <rect class="node" x="140" y="150" width="330" height="64" rx="10"/>
+  <text class="b" x="156" y="186.500" style="font-size:12px">tick</text>
+  <rect class="val" x="200" y="166" width="110" height="32" rx="16"/>
+  <text class="mono mid" x="255" y="186" style="font-size:12px">input_1</text>
+  <rect class="val" x="330" y="166" width="110" height="32" rx="16"/>
+  <text class="mono mid" x="385" y="186" style="font-size:12px">input_2</text>
+
+  <path class="edge" d="M470 182H518"/>
+  <text class="note small mid" x="493" y="174">then</text>
+  <rect class="ev" x="520" y="158" width="100" height="48" rx="10"/>
+  <text class="b mid orange" x="570" y="186.500">event</text>
+
+  <path class="gedge" d="M215 80C215 124 255 120 255 164"/>
+  <path class="gedge" d="M545 80C545 124 385 120 385 164"/>
+  <path class="oedge" d="M380 80C380 116 570 112 570 156"/>
+
+  <text class="note mid" x="380" y="240">An event is processed after every tick that started before the event arrived.</text>
+</svg>

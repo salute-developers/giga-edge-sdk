@@ -1,0 +1,421 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 09/12] examples: mtp-fused
+
+Greedy generation with and without fused MTP on the same prompts: token
+comparison, draft acceptance and step timing.
+---
+ examples/CMakeLists.txt           |   1 +
+ examples/mtp-fused/CMakeLists.txt |   5 +
+ examples/mtp-fused/mtp-fused.cpp  | 377 ++++++++++++++++++++++++++++++
+ 3 files changed, 383 insertions(+)
+ create mode 100644 examples/mtp-fused/CMakeLists.txt
+ create mode 100644 examples/mtp-fused/mtp-fused.cpp
+
+diff --git a/examples/CMakeLists.txt b/examples/CMakeLists.txt
+index 39f802d250e141135aafe05f532192e435ce135f..2e3c02667e56c709f6b58205459e0fa8dd4ef2d5 100644
+--- a/examples/CMakeLists.txt
++++ b/examples/CMakeLists.txt
+@@ -31,6 +31,7 @@ else()
+     add_subdirectory(simple-chat)
+     add_subdirectory(speculative)
+     add_subdirectory(speculative-simple)
++    add_subdirectory(mtp-fused)
+     add_subdirectory(gen-docs)
+     add_subdirectory(training)
+     add_subdirectory(diffusion)
+diff --git a/examples/mtp-fused/CMakeLists.txt b/examples/mtp-fused/CMakeLists.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..fae17cf05651deba50b312669a2010fd9770f949
+--- /dev/null
++++ b/examples/mtp-fused/CMakeLists.txt
+@@ -0,0 +1,5 @@
++set(TARGET llama-mtp-fused)
++add_executable(${TARGET} mtp-fused.cpp)
++install(TARGETS ${TARGET} RUNTIME)
++target_link_libraries(${TARGET} PRIVATE llama ${CMAKE_THREAD_LIBS_INIT})
++target_compile_features(${TARGET} PRIVATE cxx_std_17)
+diff --git a/examples/mtp-fused/mtp-fused.cpp b/examples/mtp-fused/mtp-fused.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..14a27997cbaa826253a9b747669686165ad50b71
+--- /dev/null
++++ b/examples/mtp-fused/mtp-fused.cpp
+@@ -0,0 +1,377 @@
++// Checks fused MTP with the loop of a speculative decoding engine: greedy plain and fused generation
++// on the same prompts, token comparison, draft acceptance and step time.
++//
++//   llama-mtp-fused -m model.gguf -f prompts.txt [-t 3] [-n 64] [-d 3] [-b 128] [-c 4096] [--mode both|plain|fused]
++//
++// prompts.txt: one prompt per line, token ids separated by spaces.
++
++#include "llama.h"
++
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <fstream>
++#include <map>
++#include <sstream>
++#include <string>
++#include <vector>
++
++struct run_stats {
++    int64_t t_prefill_us = 0;
++    int64_t t_gen_us     = 0;
++    int64_t n_gen        = 0; // tokens after the first one (the prefill gives it)
++    int64_t n_steps      = 0;
++    int64_t n_drafted    = 0;
++    int64_t n_accepted   = 0;
++    std::map<int, std::pair<int64_t, int64_t>> step_us; // rows in the batch -> (calls, us)
++    std::map<int, int64_t> acc_hist;
++};
++
++static llama_token argmax_row(llama_context * ctx, int32_t i, int32_t n_vocab) {
++    const float * l = llama_get_logits_ith(ctx, i);
++    return (llama_token) (std::max_element(l, l + n_vocab) - l);
++}
++
++static int64_t timed_decode(llama_context * ctx, llama_batch & batch) {
++    const int64_t t0 = llama_time_us();
++    if (llama_decode(ctx, batch) != 0) {
++        fprintf(stderr, "llama_decode failed\n");
++        exit(1);
++    }
++    llama_synchronize(ctx);
++    return llama_time_us() - t0;
++}
++
++static void batch_set(llama_batch & b, const llama_token * toks, int n, llama_pos pos0, bool all_logits) {
++    b.n_tokens = n;
++    for (int i = 0; i < n; ++i) {
++        b.token[i]     = toks[i];
++        b.pos[i]       = pos0 + i;
++        b.n_seq_id[i]  = 1;
++        b.seq_id[i][0] = 0;
++        b.logits[i]    = all_logits || i == n - 1;
++    }
++}
++
++// prefill in chunks of n_batch, logits only for the last token
++static void prefill(llama_context * ctx, llama_batch & batch, const std::vector<llama_token> & prompt, int n_batch, run_stats & st) {
++    for (size_t i = 0; i < prompt.size(); i += n_batch) {
++        const int n = std::min<int>(n_batch, prompt.size() - i);
++        batch_set(batch, prompt.data() + i, n, i, false);
++        if (i + n < prompt.size()) {
++            batch.logits[n - 1] = false;
++        }
++        st.t_prefill_us += timed_decode(ctx, batch);
++    }
++}
++
++static std::vector<llama_token> gen_plain(llama_context * ctx, llama_batch & batch, const std::vector<llama_token> & prompt,
++        int n_batch, int n_max, const std::vector<llama_token> & stop, int32_t n_vocab, run_stats & st) {
++    llama_memory_clear(llama_get_memory(ctx), true);
++    prefill(ctx, batch, prompt, n_batch, st);
++
++    std::vector<llama_token> out;
++    llama_token t = argmax_row(ctx, -1, n_vocab);
++    llama_pos cur = prompt.size();
++
++    while (true) {
++        out.push_back(t);
++        if ((int) out.size() >= n_max || std::count(stop.begin(), stop.end(), t)) {
++            break;
++        }
++        batch_set(batch, &t, 1, cur, true);
++        const int64_t us = timed_decode(ctx, batch);
++        st.t_gen_us += us;
++        st.step_us[1].first++;
++        st.step_us[1].second += us;
++        st.n_steps++;
++        t = argmax_row(ctx, 0, n_vocab);
++        cur++;
++    }
++    st.n_gen += out.size() - 1;
++    return out;
++}
++
++// engine loop: [t, d1..dk] with logits on all rows, acceptance by argmax, rollback by seq_rm
++// oracle != nullptr: MTP is off, the drafts come from the reference sequence (same batch shapes without MTP)
++static std::vector<llama_token> gen_fused(llama_context * ctx, llama_batch & batch, const std::vector<llama_token> & prompt,
++        int n_batch, int n_max, int n_draft, const std::vector<llama_token> & stop, int32_t n_vocab, run_stats & st,
++        const std::vector<llama_token> * oracle = nullptr) {
++    llama_memory_t mem = llama_get_memory(ctx);
++    llama_memory_clear(mem, true);
++    prefill(ctx, batch, prompt, n_batch, st);
++
++    std::vector<llama_token> out;
++    std::vector<llama_token> drafts(n_draft);
++    std::vector<llama_token> toks(n_draft + 1);
++
++    auto get_drafts = [&](int32_t row, size_t n_out) {
++        if (!oracle) {
++            return llama_get_mtp_drafts_ith(ctx, row, drafts.data(), n_draft);
++        }
++        int n = 0;
++        for (; n < n_draft && n_out + 1 + n < oracle->size(); ++n) {
++            drafts[n] = (*oracle)[n_out + 1 + n];
++        }
++        return n;
++    };
++
++    llama_token t = argmax_row(ctx, -1, n_vocab);
++    int n_d = get_drafts(-1, 0);
++    llama_pos cur = prompt.size();
++
++    auto is_stop = [&](llama_token x) { return std::count(stop.begin(), stop.end(), x) > 0; };
++
++    while (true) {
++        out.push_back(t);
++        if ((int) out.size() >= n_max || is_stop(t)) {
++            break;
++        }
++
++        toks[0] = t;
++        for (int j = 0; j < n_d; ++j) {
++            toks[1 + j] = drafts[j];
++        }
++        batch_set(batch, toks.data(), 1 + n_d, cur, true);
++        const int64_t us = timed_decode(ctx, batch);
++        st.t_gen_us += us;
++        st.step_us[1 + n_d].first++;
++        st.step_us[1 + n_d].second += us;
++        st.n_steps++;
++        st.n_drafted += n_d;
++
++        int acc = 0;
++        bool done = false;
++        for (int j = 0; j < n_d; ++j) {
++            if (argmax_row(ctx, j, n_vocab) != toks[1 + j]) {
++                break;
++            }
++            acc++;
++            out.push_back(toks[1 + j]);
++            if ((int) out.size() >= n_max || is_stop(toks[1 + j])) {
++                done = true;
++                break;
++            }
++        }
++        st.n_accepted += acc;
++        st.acc_hist[acc]++;
++        if (done) {
++            break;
++        }
++
++        llama_memory_seq_rm(mem, 0, cur + 1 + acc, -1);
++
++        t   = argmax_row(ctx, acc, n_vocab);
++        n_d = get_drafts(acc, out.size());
++        cur += 1 + acc;
++    }
++    st.n_gen += out.size() - 1;
++    return out;
++}
++
++// llama_decode time on a ready KV of n_base tokens: prefill of n_pf tokens (logits for the last one),
++// verification batch of n_ver rows (logits for all), plain 1 row; median over n_rep repeats
++static void bench(llama_context * ctx, llama_batch & batch, const std::vector<llama_token> & p, int n_batch, int n_base, int n_pf, int n_ver, int n_rep) {
++    run_stats st;
++    llama_memory_t mem = llama_get_memory(ctx);
++    llama_memory_clear(mem, true);
++    prefill(ctx, batch, std::vector<llama_token>(p.begin(), p.begin() + n_base), n_batch, st);
++
++    auto median = [&](int n, bool all_logits) {
++        std::vector<int64_t> t;
++        for (int r = 0; r < n_rep; ++r) {
++            batch_set(batch, p.data() + n_base, n, n_base, all_logits);
++            t.push_back(timed_decode(ctx, batch));
++            llama_memory_seq_rm(mem, 0, n_base, -1);
++        }
++        std::sort(t.begin(), t.end());
++        return t[t.size()/4]/1e3; // lower quartile: on macOS the noise only goes up
++    };
++
++    const double t_pf  = median(n_pf,  false);
++    const double t_ver = median(n_ver, true);
++    const double t_one = median(1,     true);
++    printf("bench mtp=%d: prefill %d tok %.3f ms | verify %d rows %.3f ms | plain 1 row %.3f ms\n",
++            llama_get_mtp_fused(ctx), n_pf, t_pf, n_ver, t_ver, t_one);
++}
++
++static void print_stats(const char * name, const run_stats & st) {
++    printf("%-6s prefill %8.1f ms | gen %8.1f ms, %5lld tok, %6.2f tok/s, steps %5lld, tok/step %.3f",
++            name, st.t_prefill_us/1e3, st.t_gen_us/1e3, (long long) st.n_gen,
++            st.n_gen/(st.t_gen_us/1e6), (long long) st.n_steps, st.n_steps ? (double) st.n_gen/st.n_steps : 0.0);
++    if (st.n_drafted) {
++        printf(" | accepted %lld/%lld = %.3f", (long long) st.n_accepted, (long long) st.n_drafted, (double) st.n_accepted/st.n_drafted);
++    }
++    printf("\n       step ms by rows:");
++    for (const auto & [rows, v] : st.step_us) {
++        printf("  %d: %.3f (x%lld)", rows, v.second/1e3/v.first, (long long) v.first);
++    }
++    if (!st.acc_hist.empty()) {
++        printf("\n       accepted per step:");
++        for (const auto & [a, n] : st.acc_hist) {
++            printf("  %d: %lld", a, (long long) n);
++        }
++    }
++    printf("\n");
++}
++
++int main(int argc, char ** argv) {
++    std::string model_path, prompts_path, mode = "both";
++    int n_threads = 3, n_max = 64, n_draft = 3, n_batch = 128, n_ctx = 4096, n_prompts = 0;
++    bool verbose = false;
++    int n_bench = 0; // > 0: only measure the step time, number of repeats
++
++    for (int i = 1; i < argc; ++i) {
++        std::string a = argv[i];
++        auto next = [&]() { return std::string(argv[++i]); };
++        if      (a == "-m") model_path   = next();
++        else if (a == "-f") prompts_path = next();
++        else if (a == "-t") n_threads    = std::stoi(next());
++        else if (a == "-n") n_max        = std::stoi(next());
++        else if (a == "-d") n_draft      = std::stoi(next());
++        else if (a == "-b") n_batch      = std::stoi(next());
++        else if (a == "-c") n_ctx        = std::stoi(next());
++        else if (a == "-p") n_prompts    = std::stoi(next());
++        else if (a == "--mode") mode     = next();
++        else if (a == "-v") verbose      = true;
++        else if (a == "--bench") n_bench = std::stoi(next());
++        else { fprintf(stderr, "unknown arg %s\n", a.c_str()); return 1; }
++    }
++
++    std::vector<std::vector<llama_token>> prompts;
++    {
++        std::ifstream f(prompts_path);
++        std::string line;
++        while (std::getline(f, line)) {
++            std::istringstream ss(line);
++            std::vector<llama_token> p;
++            for (llama_token t; ss >> t;) {
++                p.push_back(t);
++            }
++            if (!p.empty()) {
++                prompts.push_back(std::move(p));
++            }
++        }
++        if (n_prompts > 0 && (int) prompts.size() > n_prompts) {
++            prompts.resize(n_prompts);
++        }
++    }
++
++    llama_backend_init();
++
++    auto mparams = llama_model_default_params();
++    mparams.load_mtp = mode != "plain";
++    llama_model * model = llama_model_load_from_file(model_path.c_str(), mparams);
++    if (!model) {
++        return 1;
++    }
++    const llama_vocab * vocab = llama_model_get_vocab(model);
++    const int32_t n_vocab = llama_vocab_n_tokens(vocab);
++
++    std::vector<llama_token> stop = { llama_vocab_eos(vocab) };
++    {
++        llama_token t[4];
++        const char * sep = "<|message_sep|>\n\n";
++        if (llama_tokenize(vocab, sep, strlen(sep), t, 4, false, true) == 1) {
++            stop.push_back(t[0]);
++        }
++    }
++
++    auto cparams = llama_context_default_params();
++    cparams.n_ctx           = n_ctx;
++    cparams.n_batch         = n_batch;
++    cparams.n_ubatch        = n_batch;
++    cparams.n_threads       = n_threads;
++    cparams.n_threads_batch = n_threads;
++    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
++    cparams.no_perf         = true;
++
++    llama_context * ctx = llama_init_from_model(model, cparams);
++    if (!ctx) {
++        return 1;
++    }
++    llama_batch batch = llama_batch_init(n_batch, 0, 1);
++
++    printf("prompts %zu, n_max %d, drafts %d, threads %d, n_layer_nextn %d\n",
++            prompts.size(), n_max, n_draft, n_threads, llama_model_n_layer_nextn(model));
++
++    if (n_bench > 0) {
++        const auto & p = *std::find_if(prompts.begin(), prompts.end(), [](const auto & x) { return x.size() >= 170; });
++        llama_set_mtp_fused(ctx, 0);
++        bench(ctx, batch, p, n_batch, 150, 12, n_draft + 1, n_bench);
++        for (int d = 1; d <= n_draft; ++d) {
++            llama_set_mtp_fused(ctx, d);
++            bench(ctx, batch, p, n_batch, 150, 12, n_draft + 1, n_bench);
++        }
++        return 0;
++    }
++
++    std::vector<std::vector<llama_token>> out_plain, out_fused;
++    run_stats st_plain, st_fused;
++
++    if (mode != "fused") {
++        llama_set_mtp_fused(ctx, 0);
++        for (const auto & p : prompts) {
++            out_plain.push_back(gen_plain(ctx, batch, p, n_batch, n_max, stop, n_vocab, st_plain));
++        }
++        print_stats("plain", st_plain);
++
++        // same batch shapes as fused, but without MTP: separates batch shape noise from MTP errors
++        if (mode == "both") {
++            run_stats st_oracle;
++            int n_same = 0;
++            for (size_t i = 0; i < prompts.size(); ++i) {
++                n_same += gen_fused(ctx, batch, prompts[i], n_batch, n_max, n_draft, stop, n_vocab, st_oracle, &out_plain[i]) == out_plain[i];
++            }
++            printf("oracle (plain drafts, MTP off): identical to plain %d / %zu\n", n_same, prompts.size());
++            print_stats("oracle", st_oracle);
++        }
++    }
++    if (mode != "plain") {
++        llama_set_mtp_fused(ctx, n_draft);
++        for (const auto & p : prompts) {
++            out_fused.push_back(gen_fused(ctx, batch, p, n_batch, n_max, n_draft, stop, n_vocab, st_fused));
++        }
++        print_stats("fused", st_fused);
++    }
++
++    if (mode == "both") {
++        int n_same = 0;
++        for (size_t i = 0; i < prompts.size(); ++i) {
++            if (out_plain[i] == out_fused[i]) {
++                n_same++;
++                continue;
++            }
++            size_t k = 0;
++            while (k < out_plain[i].size() && k < out_fused[i].size() && out_plain[i][k] == out_fused[i][k]) {
++                k++;
++            }
++            printf("MISMATCH prompt %zu (len %zu) at token %zu: plain %zu tok, fused %zu tok\n",
++                    i, prompts[i].size(), k, out_plain[i].size(), out_fused[i].size());
++        }
++        printf("identical: %d / %zu\n", n_same, prompts.size());
++        if (st_plain.t_gen_us > 0 && st_fused.t_gen_us > 0) {
++            printf("speedup gen tok/s: %.3f\n", (st_fused.n_gen/(st_fused.t_gen_us/1e6)) / (st_plain.n_gen/(st_plain.t_gen_us/1e6)));
++        }
++    }
++
++    if (verbose) {
++        auto & outs = mode == "plain" ? out_plain : out_fused;
++        for (size_t i = 0; i < outs.size(); ++i) {
++            std::string s;
++            for (auto t : outs[i]) {
++                char buf[256];
++                const int n = llama_token_to_piece(vocab, t, buf, sizeof(buf), 0, true);
++                if (n > 0) s.append(buf, n);
++            }
++            printf("[%zu] %s\n", i, s.c_str());
++        }
++    }
++
++    llama_batch_free(batch);
++    llama_free(ctx);
++    llama_model_free(model);
++    llama_backend_free();
++    return 0;
++}

@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="370" viewBox="0 0 760 370" role="img" aria-labelledby="title">
+  <title id="title">The host changes features and parts, the manager answers with an UpdateAction that says what to load and what was freed</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .tiny{font-size:10px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .panel{fill:#fff;stroke:#d0d7de}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .slot{fill:#fff;stroke:#0969da;stroke-width:1.5;stroke-dasharray:5 4}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .off{fill:#f6f8fa;stroke:#afb8c1}
+    .feat{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .warn{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .purple{fill:#8250df}
+    .orange{fill:#bc4c00}
+    .green{fill:#1a7f37}
+    .muted{fill:#8c959f}
+    .white{fill:#fff}
+    .tagon{fill:#0969da}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .back{fill:none;stroke:#59636e;stroke-width:1.5;stroke-dasharray:6 4;marker-end:url(#a)}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+    .life{stroke:#afb8c1;stroke-dasharray:4 4}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="369" rx="12"/>
+
+  <rect class="host" x="40" y="20" width="140" height="30" rx="8"/>
+  <text class="b mid" x="110" y="40">host</text>
+  <rect class="card" x="480" y="20" width="160" height="30" rx="8"/>
+  <text class="mono b mid" x="560" y="40">RuntimeManager</text>
+  <line class="life" x1="110" y1="50" x2="110" y2="352"/>
+  <line class="life" x1="560" y1="50" x2="560" y2="352"/>
+
+  <path class="edge" d="M110 88H558"/>
+  <text class="mono small mid" x="335" y="80">AddFeature("hq")</text>
+  <text class="note small" x="574" y="84">the part with asr_large</text>
+  <text class="note small" x="574" y="98">is missing</text>
+  <path class="back" d="M560 128H112"/>
+  <text class="mono small mid" x="335" y="120">required_versions: asr_large, inactive_versions: asr_large</text>
+
+  <rect class="chip" x="40" y="150" width="140" height="24" rx="12"/>
+  <text class="note small mid" x="110" y="166">downloads the part</text>
+
+  <path class="edge" d="M110 208H558"/>
+  <text class="mono small mid" x="335" y="200">AddRuntimeParts({asr_pack})</text>
+  <text class="note small" x="574" y="204">builds asr_large, activates</text>
+  <text class="note small" x="574" y="218">it, removes asr_small</text>
+  <path class="back" d="M560 248H112"/>
+  <text class="mono small mid" x="335" y="240">consumed_versions: asr = asr_large, inactive_versions: none</text>
+
+  <path class="edge" d="M110 296H558"/>
+  <text class="mono small mid" x="335" y="288">RemoveFeature("hq")</text>
+  <text class="note small" x="574" y="292">switches back to asr_small,</text>
+  <text class="note small" x="574" y="306">asr_pack is not used</text>
+  <path class="back" d="M560 336H112"/>
+  <text class="mono small mid" x="335" y="328">freed_parts: asr_pack</text>
+
+</svg>

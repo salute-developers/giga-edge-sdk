@@ -1,0 +1,23 @@
+tensorflow/lite: TF version for release_version.h in the CMake build.
+
+Since TF 2.20 tensorflow/core/public/release_version.h requires TF_MAJOR_VERSION, TF_MINOR_VERSION,
+TF_PATCH_VERSION and TF_VERSION_SUFFIX (#error without them); Bazel defines them, the CMake build of
+tflite 2.20 does not. Backport of the later tflite: compile definitions of tensorflow-lite with the version
+of this tag (2.20.0).
+
+--- a/tensorflow/lite/CMakeLists.txt
++++ b/tensorflow/lite/CMakeLists.txt
+@@ -749,6 +749,13 @@
+   PUBLIC ${TFLITE_TARGET_PUBLIC_OPTIONS}
+   PRIVATE ${TFLITE_TARGET_PRIVATE_OPTIONS}
+ )
++target_compile_definitions(tensorflow-lite
++  PRIVATE
++    TF_MAJOR_VERSION=2
++    TF_MINOR_VERSION=20
++    TF_PATCH_VERSION=0
++    TF_VERSION_SUFFIX=""
++)
+ add_library(${PROJECT_NAME}::tensorflowlite ALIAS tensorflow-lite)
+ 
+ # The install targets.

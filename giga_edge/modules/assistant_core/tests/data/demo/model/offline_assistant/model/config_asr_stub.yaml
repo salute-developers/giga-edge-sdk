@@ -1,0 +1,8 @@
+version: offline_assistant.asr_stub.oss.1.0.0
+nodes:
+  - type: string_stub
+    name: string_stub
+    inputs:
+      input: audio
+    outputs:
+      text: text

@@ -1,0 +1,1 @@
+register_module(synthesis_text DEFAULT)

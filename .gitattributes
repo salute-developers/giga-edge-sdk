@@ -1,0 +1,6 @@
+# Scripts and patches as they are: patches apply only with the line endings of the sources.
+*.sh text eol=lf
+tools/dependencies/patches/** -text
+tools/dependencies/patches-oss/** -text
+# The test data of the vits backend as it is: converted line endings break the checksums of text dictionaries.
+giga_edge/modules/tts/tests/data/vits/** -text

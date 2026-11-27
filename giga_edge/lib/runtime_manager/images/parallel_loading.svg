@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="232" viewBox="0 0 760 232" role="img" aria-labelledby="title">
+  <title id="title">With load_threads above 1 sibling submodel versions are built at the same time</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .tiny{font-size:10px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .panel{fill:#fff;stroke:#d0d7de}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .slot{fill:#fff;stroke:#0969da;stroke-width:1.5;stroke-dasharray:5 4}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .off{fill:#f6f8fa;stroke:#afb8c1}
+    .feat{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .warn{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .purple{fill:#8250df}
+    .orange{fill:#bc4c00}
+    .green{fill:#1a7f37}
+    .muted{fill:#8c959f}
+    .white{fill:#fff}
+    .tagon{fill:#0969da}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .back{fill:none;stroke:#59636e;stroke-width:1.5;stroke-dasharray:6 4;marker-end:url(#a)}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+    .life{stroke:#afb8c1;stroke-dasharray:4 4}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="231" rx="12"/>
+
+  <text class="mono b mid" x="198" y="38" style="font-size:12px">load_threads: 1</text>
+  <rect class="panel" x="24" y="50" width="348" height="112" rx="8"/>
+  <rect class="node" x="38" y="78" width="54" height="28" rx="6"/>
+  <text class="mono small mid" x="65" y="96">a</text>
+  <rect class="node" x="98" y="78" width="54" height="28" rx="6"/>
+  <text class="mono small mid" x="125" y="96">b</text>
+  <rect class="node" x="158" y="78" width="54" height="28" rx="6"/>
+  <text class="mono small mid" x="185" y="96">c</text>
+  <rect class="node" x="218" y="78" width="54" height="28" rx="6"/>
+  <text class="mono small mid" x="245" y="96">d</text>
+  <rect class="val" x="278" y="78" width="70" height="28" rx="6"/>
+  <text class="small mid" x="313" y="96">activate</text>
+  <text class="note small mid" x="198" y="144">one version at a time</text>
+
+  <text class="mono b mid" x="562" y="38" style="font-size:12px">load_threads: 2</text>
+  <rect class="panel" x="388" y="50" width="348" height="112" rx="8"/>
+  <rect class="node" x="402" y="62" width="54" height="28" rx="6"/>
+  <text class="mono small mid" x="429" y="80">a</text>
+  <rect class="node" x="462" y="62" width="54" height="28" rx="6"/>
+  <text class="mono small mid" x="489" y="80">c</text>
+  <rect class="node" x="402" y="96" width="54" height="28" rx="6"/>
+  <text class="mono small mid" x="429" y="114">b</text>
+  <rect class="node" x="462" y="96" width="54" height="28" rx="6"/>
+  <text class="mono small mid" x="489" y="114">d</text>
+  <rect class="val" x="522" y="79" width="70" height="28" rx="6"/>
+  <text class="small mid" x="557" y="97">activate</text>
+  <text class="note small mid" x="562" y="144">two at a time, the same result</text>
+
+  <path class="edge" d="M38 180H722"/>
+  <text class="note end" x="722" y="198">time</text>
+  <text class="note mid" x="380" y="216">a, b, c, d are sibling versions; the limit applies to every nesting level separately.</text>
+</svg>

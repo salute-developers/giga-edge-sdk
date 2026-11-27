@@ -1,0 +1,8 @@
+JarvisForms =
+    ("джарвис".utf8 : "джарвис|".utf8)
+  | ("джарвис".utf8 : "джарвиса|".utf8)
+  | ("джарвис".utf8 : "джарвису|".utf8)
+  | ("джарвис".utf8 : "джарвисом|".utf8)
+  | ("джарвис".utf8 : "джарвисе|".utf8);
+
+export STRING_GRAMMAR_ALL = JarvisForms;

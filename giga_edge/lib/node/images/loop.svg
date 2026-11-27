@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="265" viewBox="0 0 760 265" role="img" aria-labelledby="title">
+  <title id="title">A node loop runs in short iterations and is interrupted by new data</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .int{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .orange{fill:#bc4c00}
+    .other{fill:#eaeef2;stroke:#afb8c1}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .brace{fill:none;stroke:#8c959f}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="264" rx="12"/>
+
+  <text class="note" x="24" y="48">inputs</text>
+  <text class="note" x="24" y="124">node</text>
+  <text class="note" x="24" y="199">other nodes</text>
+
+  <circle class="val" cx="165" cy="44" r="9"/>
+  <text class="note" x="181" y="48">data</text>
+  <path class="edge" d="M165 54V98"/>
+  <circle class="val" cx="575" cy="44" r="9"/>
+  <text class="note" x="591" y="48">new data</text>
+  <path class="edge" d="M575 54V98"/>
+
+  <text class="note mid" x="399" y="76">between iterations the node leaves the queue</text>
+  <path class="brace" d="M262 92V85H536V92"/>
+
+  <rect class="node" x="130" y="100" width="100" height="40" rx="6"/>
+  <text class="mono small mid" x="180" y="124">ProcessOnce</text>
+  <rect class="node" x="262" y="100" width="70" height="40" rx="6"/>
+  <text class="mid" x="297" y="124" style="font-size:12px">iteration</text>
+  <rect class="node" x="364" y="100" width="70" height="40" rx="6"/>
+  <text class="mid" x="399" y="124" style="font-size:12px">iteration</text>
+  <rect class="node" x="466" y="100" width="70" height="40" rx="6"/>
+  <text class="mid" x="501" y="124" style="font-size:12px">iteration</text>
+  <rect class="int" x="552" y="100" width="70" height="40" rx="6"/>
+  <text class="mid orange" x="587" y="124" style="font-size:12px">interrupt</text>
+  <rect class="node" x="638" y="100" width="100" height="40" rx="6"/>
+  <text class="mono small mid" x="688" y="124">ProcessOnce</text>
+
+  <text class="mono note small mid" x="180" y="158">StartLoop()</text>
+  <text class="mono note small mid" x="399" y="158">ProcessLoopIterationImpl()</text>
+  <text class="mono note small mid orange" x="592" y="158">ProcessLoopInterruptImpl()</text>
+
+  <rect class="other" x="234" y="182" width="24" height="26" rx="4"/>
+  <rect class="other" x="336" y="182" width="24" height="26" rx="4"/>
+  <rect class="other" x="438" y="182" width="24" height="26" rx="4"/>
+
+  <path class="edge" d="M130 236H738"/>
+  <text class="note end" x="738" y="254">time</text>
+</svg>

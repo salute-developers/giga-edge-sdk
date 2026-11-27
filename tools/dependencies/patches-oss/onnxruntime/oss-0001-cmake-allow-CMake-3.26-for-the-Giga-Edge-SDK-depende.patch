@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:08:16 +0000
+Subject: [PATCH 1/4] cmake: allow CMake 3.26 for the Giga Edge SDK dependency
+ build
+
+Lower the minimum CMake version from 3.28 to 3.26 and create an empty
+install script for Eigen on CMake older than 3.28: there the install step
+includes it although the install rules of Eigen are skipped, and fails.
+
+This is a build patch for the Giga Edge SDK environment: CMake 3.26 with all
+third-party dependencies prebuilt and found through find_package(). It is not
+a port to CMake 3.26 in general: EXCLUDE_FROM_ALL in FetchContent_Declare
+needs CMake 3.28 and is ignored on older versions for every fetched
+dependency, and only the Eigen case is handled.
+---
+ cmake/CMakeLists.txt       |  2 +-
+ cmake/external/eigen.cmake | 11 +++++++++++
+ 2 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/cmake/CMakeLists.txt b/cmake/CMakeLists.txt
+index c6e16d4a3920f62e2dd4d63326ade29cfba3215c..2682b3a8718ffbeb05d2439795a4ad7c368d0d33 100644
+--- a/cmake/CMakeLists.txt
++++ b/cmake/CMakeLists.txt
+@@ -3,7 +3,7 @@
+ # Licensed under the MIT License.
+ 
+ # Minimum CMake required
+-cmake_minimum_required(VERSION 3.28)
++cmake_minimum_required(VERSION 3.26)
+ 
+ # Don't let cmake set a default value for CMAKE_CUDA_ARCHITECTURES
+ cmake_policy(SET CMP0104 OLD)
+diff --git a/cmake/external/eigen.cmake b/cmake/external/eigen.cmake
+index 9b5ca601df8d44a59e229defc6bca067683bb328..1a3e73db6216385123123a38c3bf5b269c3a1cf4 100644
+--- a/cmake/external/eigen.cmake
++++ b/cmake/external/eigen.cmake
+@@ -11,3 +11,14 @@ onnxruntime_fetchcontent_declare(
+     EXCLUDE_FROM_ALL
+ )
+ onnxruntime_fetchcontent_makeavailable(Eigen3)
++
++# WORKAROUND: For CMake versions older than ~3.27, the top-level project
++# might still try to include the install script from a dependency even if
++# CMAKE_SKIP_INSTALL_RULES was set. We create a dummy file to prevent a
++# fatal error during the install phase.
++if(CMAKE_VERSION VERSION_LESS "3.28")
++  if(NOT EXISTS "${eigen3_BINARY_DIR}/cmake_install.cmake")
++    message(STATUS "Creating a dummy cmake_install.cmake for Eigen to support older CMake version ${CMAKE_VERSION}")
++    file(WRITE "${eigen3_BINARY_DIR}/cmake_install.cmake" "# This is a dummy file to work around an old CMake bug.\n")
++  endif()
++endif()

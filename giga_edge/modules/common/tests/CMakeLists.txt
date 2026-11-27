@@ -1,0 +1,42 @@
+cmake_minimum_required(VERSION 3.13)
+
+add_giga_edge_test(
+  common_module_tests
+  SRCS
+    src/nodes/accumulate_buffer.cpp
+    src/nodes/accumulate_text.cpp
+    src/nodes/aggregation.cpp
+    src/nodes/batch_gather_string.cpp
+    src/nodes/batchify.cpp
+    src/nodes/clone_input_bool.cpp
+    src/nodes/clone_input_float.cpp
+    src/nodes/coalesce_text.cpp
+    src/nodes/compare.cpp
+    src/nodes/concat_vec_float.cpp
+    src/nodes/counter.cpp
+    src/nodes/data_gate.cpp
+    src/nodes/forward_accumulated_buffer.cpp
+    src/nodes/has_substring_by_key.cpp
+    src/nodes/is_empty.cpp
+    src/nodes/length.cpp
+    src/nodes/logical_expression.cpp
+    src/nodes/logical_op.cpp
+    src/nodes/math_expression.cpp
+    src/nodes/normalize_features.cpp
+    src/nodes/one_time_padding.cpp
+    src/nodes/padding.cpp
+    src/nodes/signal_event_is_fired.cpp
+    src/nodes/strip_leading_words.cpp
+    src/nodes/thresholds_compare.cpp
+    src/nodes/timer.cpp
+    src/nodes/to_bool.cpp
+    src/nodes/to_float.cpp
+    src/nodes/to_vec_float.cpp
+    src/nodes/transpose.cpp
+    src/nodes/tts_output_stub.cpp
+    src/nodes/window_aggregation.cpp
+  LIBS
+    common_module
+    node_test_utils
+    data_reader_lib
+)

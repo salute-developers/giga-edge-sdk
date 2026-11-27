@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="245" viewBox="0 0 760 245" role="img" aria-labelledby="title">
+  <title id="title">NodeOutput: one producer, several consumers, each with its own read position</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .cell{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="244" rx="12"/>
+
+  <rect class="node" x="30" y="85" width="120" height="60" rx="10"/>
+  <text class="mono b mid" x="90" y="119.500">producer</text>
+  <path class="edge" d="M150 115H213"/>
+  <text class="note mid" x="181" y="107">push</text>
+
+  <rect class="cell" x="215" y="93" width="56" height="44"/>
+  <text class="mono mid" x="243" y="119.500">v5</text>
+  <rect class="cell" x="271" y="93" width="56" height="44"/>
+  <text class="mono mid" x="299" y="119.500">v4</text>
+  <rect class="cell" x="327" y="93" width="56" height="44"/>
+  <text class="mono mid" x="355" y="119.500">v3</text>
+  <rect class="cell" x="383" y="93" width="56" height="44"/>
+  <text class="mono mid" x="411" y="119.500">v2</text>
+  <rect class="cell" x="439" y="93" width="56" height="44"/>
+  <text class="mono mid" x="467" y="119.500">v1</text>
+  <text x="215" y="160"><tspan class="mono b">NodeOutput</tspan><tspan class="note" dx="8">SPMC queue</tspan></text>
+
+  <path class="edge" d="M299 93V67Q299 57 309 57H598"/>
+  <text class="note mid" x="450" y="49">next: v4</text>
+  <path class="edge" d="M495 115H598"/>
+  <text class="note mid" x="547" y="107">next: v1</text>
+  <path class="edge" d="M411 137V162Q411 172 421 172H598"/>
+  <text class="note mid" x="506" y="190">next: v2</text>
+
+  <rect class="node" x="600" y="35" width="130" height="44" rx="10"/>
+  <text class="mono b mid" x="665" y="61.500">consumer A</text>
+  <rect class="node" x="600" y="93" width="130" height="44" rx="10"/>
+  <text class="mono b mid" x="665" y="119.500">consumer B</text>
+  <rect class="node" x="600" y="150" width="130" height="44" rx="10"/>
+  <text class="mono b mid" x="665" y="176.500">consumer C</text>
+
+  <text class="note mid" x="380" y="226">Each consumer keeps its own read position and gets every value, in order.</text>
+</svg>

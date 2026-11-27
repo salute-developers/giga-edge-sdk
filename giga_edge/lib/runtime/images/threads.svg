@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="290" viewBox="0 0 760 290" role="img" aria-labelledby="title">
+  <title id="title">With worker threads nodes and callbacks run on the workers; with num_threads 0 they run on the caller's thread inside Push</title>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .panel{fill:#fff;stroke:#d0d7de}
+    .lane{stroke:#eaeef2;stroke-width:1}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .call{fill:#eaeef2;stroke:#8c959f;stroke-width:1.5}
+    .wrap{fill:#f6f8fa;stroke:#8c959f;stroke-width:1.5}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="289" rx="12"/>
+
+  <text class="mono b mid" x="235" y="38" style="font-size:12px">num_threads: 2</text>
+  <rect class="panel" x="24" y="50" width="422" height="196" rx="8"/>
+  <path class="lane" d="M120 92H432M120 138H432M120 184H432"/>
+  <text class="note" x="38" y="96">caller</text>
+  <text class="note" x="38" y="142">worker 1</text>
+  <text class="note" x="38" y="188">worker 2</text>
+
+  <rect class="call" x="124" y="78" width="60" height="28" rx="6"/>
+  <text class="mono small mid" x="154" y="96">Push</text>
+  <text class="note small" x="194" y="96">returns right away</text>
+
+  <rect class="node" x="194" y="124" width="52" height="28" rx="6"/>
+  <text class="mono small mid" x="220" y="142">a</text>
+  <rect class="node" x="252" y="170" width="52" height="28" rx="6"/>
+  <text class="mono small mid" x="278" y="188">b</text>
+  <rect class="node" x="310" y="124" width="52" height="28" rx="6"/>
+  <text class="mono small mid" x="336" y="142">c</text>
+  <rect class="val" x="368" y="124" width="64" height="28" rx="6"/>
+  <text class="small mid" x="400" y="142">callback</text>
+  <text class="note mid" x="235" y="230">nodes and callbacks run on the workers</text>
+
+  <text class="mono b mid" x="599" y="38" style="font-size:12px">num_threads: 0</text>
+  <rect class="panel" x="462" y="50" width="274" height="196" rx="8"/>
+  <path class="lane" d="M528 138H724"/>
+  <text class="note" x="476" y="142">caller</text>
+
+  <rect class="wrap" x="526" y="100" width="198" height="72" rx="8"/>
+  <text class="mono small" x="536" y="118">Push</text>
+  <rect class="node" x="536" y="130" width="34" height="28" rx="6"/>
+  <text class="mono small mid" x="553" y="148">a</text>
+  <rect class="node" x="576" y="130" width="34" height="28" rx="6"/>
+  <text class="mono small mid" x="593" y="148">b</text>
+  <rect class="node" x="616" y="130" width="34" height="28" rx="6"/>
+  <text class="mono small mid" x="633" y="148">c</text>
+  <rect class="val" x="656" y="130" width="60" height="28" rx="6"/>
+  <text class="small mid" x="686" y="148">callback</text>
+  <text class="note mid" x="599" y="230">everything runs inside Push</text>
+
+  <text class="note mid" x="380" y="272">A Subscribe callback runs on the thread that writes the value to the output.</text>
+</svg>

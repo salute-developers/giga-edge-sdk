@@ -1,0 +1,32 @@
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Subject: [PATCH] mp11: plain CMake package for the onnxruntime build
+
+Takes the Boost CMake support files from the neighbouring checkout of boostorg/cmake (downloads/cmake)
+instead of downloading the develop branch at configure time.
+---
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d8600fa429e4776c5d0a8dcc2f318aff1f7f0f92..1fb5a00f3506b432debf05a6d71bbd57e2f9c65b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -16,20 +16,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+ 
+   # Fetch support files
+ 
+-  message(STATUS "Fetching BoostFetch.cmake")
+-
+-  file(DOWNLOAD
+-    "https://raw.githubusercontent.com/boostorg/cmake/develop/include/BoostFetch.cmake"
+-    "${CMAKE_BINARY_DIR}/fetch_and_include/BoostFetch.cmake"
+-  )
+-
+-  include("${CMAKE_BINARY_DIR}/fetch_and_include/BoostFetch.cmake")
+-
+-  boost_fetch(boostorg/cmake TAG develop NO_ADD_SUBDIR)
+-
+-  FetchContent_GetProperties(boostorg_cmake)
+-
+-  list(APPEND CMAKE_MODULE_PATH ${boostorg_cmake_SOURCE_DIR}/include)
++  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/include")
+ 
+   # Testing (off by default)
+ 

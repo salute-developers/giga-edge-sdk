@@ -1,0 +1,30 @@
+# OSX
+.DS_Store
+
+*.dll
+*.a
+*.so
+*.lib
+*.exe
+*~
+.vscode
+build
+build_*/
+.cache
+compile_commands.json
+
+# JetBrains IDEs
+.idea/
+cmake-build-*/
+*.iws
+out/
+
+.cpm/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Problem reports of the offline assistant demo
+bug_reports/

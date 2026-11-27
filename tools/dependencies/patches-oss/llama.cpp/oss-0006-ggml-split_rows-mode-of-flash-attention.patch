@@ -1,0 +1,454 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 06/12] ggml: split_rows mode of flash attention
+
+ggml_flash_attn_ext_set_split_rows marks a flash attention op whose q rows
+are each computed like a single row: with its own n_kv and the same split of
+the cache across threads. A draft verification batch then matches
+step-by-step generation bitwise. Implemented in the CPU backend;
+test-fa-split-rows compares every row of a batch with the row computed alone.
+---
+ ggml/include/ggml.h          |   6 ++
+ ggml/src/ggml-cpu/common.h   |   2 +
+ ggml/src/ggml-cpu/ggml-cpu.c |   2 +-
+ ggml/src/ggml-cpu/ops.cpp    | 191 ++++++++++++++++++++++++++---------
+ ggml/src/ggml.c              |   8 ++
+ tests/CMakeLists.txt         |   1 +
+ tests/test-fa-split-rows.cpp | 116 +++++++++++++++++++++
+ 7 files changed, 275 insertions(+), 51 deletions(-)
+ create mode 100644 tests/test-fa-split-rows.cpp
+
+diff --git a/ggml/include/ggml.h b/ggml/include/ggml.h
+index 224bdef927ac90bfa07ee39db3247b7bac4f14ec..efae7fbd15c84ed13a0dcf1b58a9eb6de10b61a9 100644
+--- a/ggml/include/ggml.h
++++ b/ggml/include/ggml.h
+@@ -2502,6 +2502,12 @@ extern "C" {
+     GGML_API enum ggml_prec ggml_flash_attn_ext_get_prec(
+             const struct ggml_tensor * a);
+ 
++    // CPU: each q row is computed with the same split of the cache across threads as a single row with its n_kv
++    // (a draft verification batch matches step-by-step generation bitwise)
++    GGML_API void ggml_flash_attn_ext_set_split_rows(
++            struct ggml_tensor * a,
++            bool                 split_rows);
++
+     // Use finite mask entries as a sparse K/V set. Set 0 to disable.
+     // n_kv_max must bound the number of finite entries in every mask row.
+     GGML_API void ggml_flash_attn_ext_set_n_kv_max(
+diff --git a/ggml/src/ggml-cpu/common.h b/ggml/src/ggml-cpu/common.h
+index abbadc359c5addac941f8add92674061c8b790bf..b176b0c7fbbb417512695681410096da7a3889d6 100644
+--- a/ggml/src/ggml-cpu/common.h
++++ b/ggml/src/ggml-cpu/common.h
+@@ -7,6 +7,8 @@
+ #include "simd-mappings.h"
+ 
+ #define GGML_FA_TILE_Q  64
++// q rows that FA with the split_rows flag computes as single rows (MTP verification batch)
++#define GGML_FA_SPLIT_ROWS_MAX 8
+ #define GGML_FA_TILE_KV 64
+ 
+ #ifdef __cplusplus
+diff --git a/ggml/src/ggml-cpu/ggml-cpu.c b/ggml/src/ggml-cpu/ggml-cpu.c
+index 7c274c03b7f1546cfd665ad7f60f01b80f47f592..8aef980e46bfa5ecebcf58fff720d8f9f50be3af 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -2997,7 +2997,7 @@ struct ggml_cplan ggml_graph_plan(
+                         // Decode path: n_kv_chunks = n_tasks (one chunk per thread)
+                         // Per-thread: VKQ accmulator (DV), partial M, partial S + intra-thread scratch for V, Q and VKQ
+                         size_t n_chunks = n_tasks;
+-                        size_t decode   = sizeof(float)*(neq2*n_chunks*(2+DV) + n_tasks*(DK + 2*DV));
++                        size_t decode   = sizeof(float)*(GGML_FA_SPLIT_ROWS_MAX*neq2*n_chunks*(2+DV) + n_tasks*(DK + 2*DV + CACHE_LINE_SIZE_F32));
+ 
+                         cur += MAX(prefill, decode);
+                     } break;
+diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
+index 16a916d20af145506628d198ba9d1d99204a9b38..d881fc642d4122369d72a2f15602d54105cfb08c 100644
+--- a/ggml/src/ggml-cpu/ops.cpp
++++ b/ggml/src/ggml-cpu/ops.cpp
+@@ -9057,7 +9057,7 @@ static void ggml_compute_forward_flash_attn_ext_f16_one_chunk(
+         if (write_partials) {
+             // Write M, S, VKQ to partials for later reduction
+             // partials layout: [M, S, VKQ[DV]] per query head
+-            float * partial = partials + ir * partial_stride;
++            float * partial = partials + (iq2 + iq3*neq2) * partial_stride;
+             partial[0] = M;
+             partial[1] = S;
+             memcpy(partial + 2, VKQ32, DV * sizeof(float));
+@@ -9367,6 +9367,52 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
+ 
+ // Reduction function: combines partial results across KV chunks
+ // Partials layout in wdata: [n_q_heads][n_chunks][2 + DV]
++// reduces the partial sums of one head over the cache chunks [chunk][M, S, VKQ[DV]] and writes the output row
++static void ggml_flash_attn_ext_combine_head(
++        const float * partials,
++        const int64_t n_chunks,
++        const int64_t chunk_size,
++        const int64_t nek1,
++        const int64_t DV,
++        float       * VKQ_final,
++        void        * out) {
++    const int64_t partial_size = 2 + DV;
++
++    float M_final = -INFINITY;
++    float S_final = 0.0f;
++    memset(VKQ_final, 0, DV * sizeof(float));
++
++    // Combine partials from all chunks
++    for (int64_t chunk_idx = 0; chunk_idx < n_chunks; ++chunk_idx) {
++        const int64_t ic_start = chunk_idx * chunk_size;
++        if (ic_start >= nek1) continue;
++
++        const float * partial   = partials + chunk_idx * partial_size;
++        const float   M_chunk   = partial[0];
++        const float   S_chunk   = partial[1];
++        const float * VKQ_chunk = partial + 2;
++
++        if (S_chunk == 0.0f) continue;
++
++        const float M_new     = fmaxf(M_final, M_chunk);
++        const float scale_old = expf(M_final - M_new);
++        const float scale_new = expf(M_chunk - M_new);
++
++        for (int64_t d = 0; d < DV; ++d) {
++            VKQ_final[d] = VKQ_final[d] * scale_old + VKQ_chunk[d] * scale_new;
++        }
++        S_final = S_final * scale_old + S_chunk * scale_new;
++        M_final = M_new;
++    }
++
++    // Normalize and write to output
++    if (S_final != 0.0f) {
++        const float S_inv = 1.0f / S_final;
++        ggml_vec_scale_f32(DV, VKQ_final, S_inv);
++    }
++    memcpy(out, VKQ_final, DV * sizeof(float));
++}
++
+ static void ggml_flash_attn_ext_reduce_partials(
+         const ggml_compute_params * params,
+         ggml_tensor * dst,
+@@ -9392,48 +9438,11 @@ static void ggml_flash_attn_ext_reduce_partials(
+     const int64_t partial_size     = 2 + DV;
+     const float * partials_base    = (const float *) params->wdata + partials_offset;
+ 
+-    // Output layout
+-    const int64_t ne1 = dst->ne[1];
+-    const int64_t ne2 = dst->ne[2];
+-    const size_t  nb1 = dst->nb[1];
+-
+     // Each thread reduces a subset of query heads
+     for (int64_t q_head = ith; q_head < n_q_heads; q_head += nth) {
+-        float   M_final   = -INFINITY;
+-        float   S_final   = 0.0f;
+-        float * VKQ_final = thread_wdata;
+-        memset(VKQ_final, 0, DV * sizeof(float));
+-
+-        // Combine partials from all chunks
+-        for (int64_t chunk_idx = 0; chunk_idx < n_chunks; ++chunk_idx) {
+-            const int64_t ic_start = chunk_idx * chunk_size;
+-            if (ic_start >= nek1) continue;
+-
+-            const float * partial   = partials_base + (q_head * n_chunks + chunk_idx) * partial_size;
+-            const float   M_chunk   = partial[0];
+-            const float   S_chunk   = partial[1];
+-            const float * VKQ_chunk = partial + 2;
+-
+-            if (S_chunk == 0.0f) continue;
+-
+-            const float M_new     = fmaxf(M_final, M_chunk);
+-            const float scale_old = expf(M_final - M_new);
+-            const float scale_new = expf(M_chunk - M_new);
+-
+-            for (int64_t d = 0; d < DV; ++d) {
+-                VKQ_final[d] = VKQ_final[d] * scale_old + VKQ_chunk[d] * scale_new;
+-            }
+-            S_final = S_final * scale_old + S_chunk * scale_new;
+-            M_final = M_new;
+-        }
+-
+-        // Normalize and write to output
+-        if (S_final != 0.0f) {
+-            const float S_inv = 1.0f / S_final;
+-            ggml_vec_scale_f32(DV, VKQ_final, S_inv);
+-        }
+         // iq1=0, iq3=0 for decode
+-        memcpy((char *) dst->data + (0*ne2*ne1 + q_head + 0*ne1)*nb1, VKQ_final, nb1);
++        ggml_flash_attn_ext_combine_head(partials_base + q_head * n_chunks * partial_size, n_chunks, chunk_size, nek1, DV,
++                thread_wdata, (char *) dst->data + q_head*dst->nb[1]);
+     }
+ }
+ 
+@@ -9488,27 +9497,109 @@ static void ggml_compute_forward_flash_attn_ext_f16(
+     const bool kv_is_f32_or_f16 = (k->type == GGML_TYPE_F32 || k->type == GGML_TYPE_F16);
+     const bool use_split_kv_path = !use_ref && (neq1 == 1 && neq3 == 1) && kv_is_f32_or_f16 && (k->type == v->type) && q->type == GGML_TYPE_F32 && nek1 >= 512;
+ 
+-    if (use_split_kv_path) {
++    // rows one by one, each as a single row: with its own n_kv (the cache is padded to 256, as in llama.cpp)
++    // split across threads or a single pass
++    const bool split_rows = ggml_get_op_params_i32(dst, 5) != 0 && !use_ref && neq1 > 1 && neq3 == 1 &&
++        neq1 <= GGML_FA_SPLIT_ROWS_MAX && kv_is_f32_or_f16 && k->type == v->type && q->type == GGML_TYPE_F32 && nek1 >= 512 &&
++        dst->src[3] && dst->src[3]->type == GGML_TYPE_F16 && dst->src[3]->ne[2] == 1 && dst->src[3]->ne[3] == 1;
++
++    if (split_rows) {
++        const ggml_tensor * mask = dst->src[3];
++
++        const int64_t partial_size  = 2 + DV;
++        float * const partials_base = (float *) params->wdata + nth * (DK + 2*DV + CACHE_LINE_SIZE_F32);
++        float * const scratch       = (float *) params->wdata + ith * (DK + 2*DV + CACHE_LINE_SIZE_F32);
++
++        int64_t n_kv[GGML_FA_SPLIT_ROWS_MAX];
++        for (int64_t iq1 = 0; iq1 < neq1; ++iq1) {
++            const ggml_fp16_t * mp = (const ggml_fp16_t *) ((const char *) mask->data + iq1*mask->nb[1]);
++
++            int64_t last = nek1 - 1;
++            while (last >= 0 && GGML_CPU_FP16_TO_FP32(mp[last]) == -INFINITY) {
++                --last;
++            }
++            n_kv[iq1] = std::min<int64_t>(nek1, std::max<int64_t>(256, GGML_PAD(last + 1, 256)));
++        }
++
++        // the work is (row, head, cache chunk) triples: the chunk bounds are those of a single row, and the threads
++        // take the triples dynamically (in SWA layers the open cells lie in one chunk); rows with n_kv < 512 go as whole (row, head)
++        int64_t n_items = 0;
++        for (int64_t iq1 = 0; iq1 < neq1; ++iq1) {
++            n_items += neq2 * (n_kv[iq1] < 512 ? 1 : nth);
++        }
++
++        if (ith == 0) {
++            ggml_threadpool_chunk_set(params->threadpool, nth);
++        }
++        ggml_barrier(params->threadpool);
++
++        for (int64_t item = ith; item < n_items; item = ggml_threadpool_chunk_add(params->threadpool, 1)) {
++            int64_t iq1 = 0;
++            int64_t rest = item;
++            while (rest >= neq2 * (n_kv[iq1] < 512 ? 1 : nth)) {
++                rest -= neq2 * (n_kv[iq1] < 512 ? 1 : nth);
++                ++iq1;
++            }
++            if (n_kv[iq1] < 512) {
++                ggml_compute_forward_flash_attn_ext_f16_one_chunk(params, dst, iq1 + neq1*rest, iq1 + neq1*rest + 1, 0, nek1, nullptr, 0);
++                continue;
++            }
++
++            const int64_t h          = rest / nth;
++            const int64_t c          = rest % nth;
++            const int64_t chunk_size = (n_kv[iq1] + nth - 1) / nth;
++            const int64_t ic_start   = c * chunk_size;
++            const int64_t ic_end     = std::min(ic_start + chunk_size, n_kv[iq1]);
++            float * const row_partials = partials_base + iq1*neq2*nth*partial_size;
++
++            if (ic_start < n_kv[iq1]) {
++                ggml_compute_forward_flash_attn_ext_f16_one_chunk(params, dst, iq1 + neq1*h, iq1 + neq1*h + 1, ic_start, ic_end,
++                        row_partials + c*partial_size, nth*partial_size);
++            } else {
++                float * p = row_partials + (h*nth + c)*partial_size;
++                p[0] = -INFINITY;
++                p[1] = 0.0f;
++            }
++        }
++
++        ggml_barrier(params->threadpool);
++
++        for (int64_t w = ith; w < neq1*neq2; w += nth) {
++            const int64_t iq1 = w / neq2;
++            const int64_t h   = w % neq2;
++            if (n_kv[iq1] < 512) {
++                continue;
++            }
++            ggml_flash_attn_ext_combine_head(partials_base + (iq1*neq2 + h)*nth*partial_size, nth, (n_kv[iq1] + nth - 1) / nth, n_kv[iq1], DV,
++                    scratch, (char *) dst->data + (h + iq1*ne1)*nb1);
++        }
++    } else if (use_split_kv_path) {
+         const int64_t chunk_size = (nek1 + nth - 1) / nth;
+ 
+         // Partials buffer layout: [q_head][kv_chunk][M, S, VKQ]
+         const int64_t partial_size  = 2 + DV;
+         float *       partials_base = (float *) params->wdata + nth * (DK + 2*DV + CACHE_LINE_SIZE_F32);
+ 
+-        const int64_t ic_start = ith * chunk_size;
+-        const int64_t ic_end   = std::min(ic_start + chunk_size, nek1);
+-
+         const int64_t partial_stride = nth * partial_size;
+-        float *       chunk_partials = partials_base + ith * partial_size;
+ 
+-        if (ic_start < nek1) {
+-            for (int64_t q_head = 0; q_head < neq2; q_head++) {
++        // (head, chunk) pairs are taken dynamically: in SWA layers the open cells lie in one chunk
++        if (ith == 0) {
++            ggml_threadpool_chunk_set(params->threadpool, nth);
++        }
++        ggml_barrier(params->threadpool);
++
++        for (int64_t item = ith; item < neq2*nth; item = ggml_threadpool_chunk_add(params->threadpool, 1)) {
++            const int64_t q_head   = item / nth;
++            const int64_t c        = item % nth;
++            const int64_t ic_start = c * chunk_size;
++            const int64_t ic_end   = std::min(ic_start + chunk_size, nek1);
++            float * chunk_partials = partials_base + c * partial_size;
++
++            if (ic_start < nek1) {
+                 ggml_compute_forward_flash_attn_ext_f16_one_chunk(
+                     params, dst, q_head, q_head + 1, ic_start, ic_end,
+                     chunk_partials, partial_stride);
+-            }
+-        } else {
+-            for (int64_t q_head = 0; q_head < neq2; q_head++) {
++            } else {
+                 float * q_partials = chunk_partials + q_head * partial_stride;
+                 q_partials[0] = -INFINITY;  // M
+                 q_partials[1] = 0.0f;       // S
+diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
+index 9bcabdbd34bbc6c3679dad2eea35bf8acee87fcc..7e4c72fd34b68a40cd4c6ea94b55c5b1bf2cd609 100644
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -5567,6 +5567,14 @@ enum ggml_prec ggml_flash_attn_ext_get_prec(
+     return (enum ggml_prec) prec_i32;
+ }
+ 
++void ggml_flash_attn_ext_set_split_rows(
++        struct ggml_tensor * a,
++        bool                 split_rows) {
++    GGML_ASSERT(a->op == GGML_OP_FLASH_ATTN_EXT);
++
++    ggml_set_op_params_i32(a, 5, split_rows ? 1 : 0);
++}
++
+ void ggml_flash_attn_ext_set_n_kv_max(
+         struct ggml_tensor * a,
+         int32_t              n_kv_max) {
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index a15bcd5e520b5da782d2dba65481dce200d28934..b72a2bfecc35f1b2e0204d255eefa9dc82e44135 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -312,6 +312,7 @@ if (NOT GGML_BACKEND_DL AND GGML_CPU)
+     llama_build_and_test(test-quantize-fns.cpp)
+     llama_build_and_test(test-quantize-perf.cpp)
+     llama_build_and_test(test-rope.cpp)
++    llama_build_and_test(test-fa-split-rows.cpp)
+     llama_build_and_test(test-col2im-1d.cpp)
+ endif()
+ 
+diff --git a/tests/test-fa-split-rows.cpp b/tests/test-fa-split-rows.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0537ec9670552cf3ef34c5b535af66f136d0e622
+--- /dev/null
++++ b/tests/test-fa-split-rows.cpp
+@@ -0,0 +1,116 @@
++// FA with the split_rows flag: each row of a batch is bitwise equal to the same row computed alone,
++// as in step-by-step generation (its own n_kv = PAD(last open cell + 1, 256), its own cache split).
++
++#include "ggml.h"
++#include "ggml-cpu.h"
++
++#include <algorithm>
++#include <cmath>
++#include <cstdio>
++#include <cstring>
++#include <random>
++#include <vector>
++
++static constexpr int64_t D       = 128;
++static constexpr int64_t N_HEAD  = 10;
++static constexpr int64_t N_HEAD_KV = 2;
++
++static void compute(ggml_cgraph * gf, int n_threads) {
++    ggml_cplan plan = ggml_graph_plan(gf, n_threads, nullptr);
++    std::vector<uint8_t> work(plan.work_size);
++    plan.work_data = work.data();
++    ggml_graph_compute(gf, &plan);
++}
++
++// q: [D, rows, N_HEAD], k/v: [D, n_kv, N_HEAD_KV] (the first n_kv cache cells), mask: [n_kv, rows]
++static std::vector<float> attend(const std::vector<float> & q, const std::vector<ggml_fp16_t> & k, const std::vector<ggml_fp16_t> & v,
++        const std::vector<ggml_fp16_t> & mask, int64_t n_cells, int64_t n_kv, int64_t rows, bool split_rows, int n_threads) {
++    ggml_init_params params = { 64*1024*1024, nullptr, false };
++    ggml_context * ctx = ggml_init(params);
++
++    ggml_tensor * tq = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, D, rows, N_HEAD);
++    ggml_tensor * tk = ggml_new_tensor_3d(ctx, GGML_TYPE_F16, D, n_kv, N_HEAD_KV);
++    ggml_tensor * tv = ggml_new_tensor_3d(ctx, GGML_TYPE_F16, D, n_kv, N_HEAD_KV);
++    ggml_tensor * tm = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, n_kv, rows);
++
++    memcpy(tq->data, q.data(), ggml_nbytes(tq));
++    for (int64_t h = 0; h < N_HEAD_KV; ++h) {
++        memcpy((char *) tk->data + h*tk->nb[2], k.data() + h*n_cells*D, n_kv*D*sizeof(ggml_fp16_t));
++        memcpy((char *) tv->data + h*tv->nb[2], v.data() + h*n_cells*D, n_kv*D*sizeof(ggml_fp16_t));
++    }
++    memcpy(tm->data, mask.data(), ggml_nbytes(tm));
++
++    ggml_tensor * out = ggml_flash_attn_ext(ctx, tq, tk, tv, tm, 1.0f/sqrtf((float) D), 0.0f, 0.0f);
++    ggml_prec_set_acc(out, GGML_PREC_F32);
++    ggml_flash_attn_ext_set_split_rows(out, split_rows);
++
++    ggml_cgraph * gf = ggml_new_graph(ctx);
++    ggml_build_forward_expand(gf, out);
++    compute(gf, n_threads);
++
++    std::vector<float> res(ggml_nelements(out));
++    memcpy(res.data(), out->data, ggml_nbytes(out));
++    ggml_free(ctx);
++    return res;
++}
++
++int main() {
++    std::mt19937 rng(42);
++    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
++
++    int n_cases = 0;
++    int n_failed = 0;
++
++    for (const int64_t n_cells : {512, 768, 1024}) {
++        std::vector<ggml_fp16_t> k(N_HEAD_KV*n_cells*D), v(N_HEAD_KV*n_cells*D);
++        for (auto & x : k) x = ggml_fp32_to_fp16(dist(rng));
++        for (auto & x : v) x = ggml_fp32_to_fp16(dist(rng));
++
++        for (const int64_t rows : {2, 3, 4, 8}) {
++            // the last row of the batch is on the last used cell; the first batch crosses the 256 boundary
++            for (const int64_t last : {n_cells - 1, n_cells - 200, 256 + rows / 2}) {
++                for (const int64_t window : {int64_t(0), int64_t(128)}) {
++                    for (const int n_threads : {1, 3, 4}) {
++                        std::vector<float> q(D*rows*N_HEAD);
++                        for (auto & x : q) x = dist(rng);
++
++                        // row i is on cell last-rows+1+i: it sees the cells up to itself (and not beyond the window)
++                        std::vector<ggml_fp16_t> mask(n_cells*rows, ggml_fp32_to_fp16(-INFINITY));
++                        for (int64_t i = 0; i < rows; ++i) {
++                            const int64_t cell = last - rows + 1 + i;
++                            for (int64_t c = window ? std::max<int64_t>(0, cell - window + 1) : 0; c <= cell; ++c) {
++                                mask[i*n_cells + c] = ggml_fp32_to_fp16(0.0f);
++                            }
++                        }
++
++                        const std::vector<float> batch = attend(q, k, v, mask, n_cells, n_cells, rows, true, n_threads);
++
++                        for (int64_t i = 0; i < rows; ++i) {
++                            const int64_t cell = last - rows + 1 + i;
++                            const int64_t n_kv = std::min<int64_t>(n_cells, std::max<int64_t>(256, GGML_PAD(cell + 1, 256)));
++
++                            std::vector<float> qi(D*N_HEAD);
++                            for (int64_t h = 0; h < N_HEAD; ++h) {
++                                memcpy(qi.data() + h*D, q.data() + (h*rows + i)*D, D*sizeof(float));
++                            }
++                            std::vector<ggml_fp16_t> mi(mask.begin() + i*n_cells, mask.begin() + i*n_cells + n_kv);
++
++                            const std::vector<float> single = attend(qi, k, v, mi, n_cells, n_kv, 1, false, n_threads);
++
++                            // FA output: [D, N_HEAD, rows]
++                            ++n_cases;
++                            if (memcmp(single.data(), batch.data() + i*N_HEAD*D, N_HEAD*D*sizeof(float)) != 0) {
++                                ++n_failed;
++                                fprintf(stderr, "mismatch: cells %lld rows %lld last %lld window %lld threads %d row %lld\n",
++                                        (long long) n_cells, (long long) rows, (long long) last, (long long) window, n_threads, (long long) i);
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    printf("%d/%d rows bit-identical\n", n_cases - n_failed, n_cases);
++    return n_failed == 0 ? 0 : 1;
++}

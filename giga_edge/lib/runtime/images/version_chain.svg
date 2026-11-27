@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="280" viewBox="0 0 760 280" role="img" aria-labelledby="title">
+  <title id="title">A submodel version chain is the path from the core graph to a nested submodel version</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .card2{fill:#f6f8fa;stroke:#0969da;stroke-width:1.5}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .link{stroke:#8c959f;stroke-width:1.2}
+    .dot{fill:#8c959f}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="279" rx="12"/>
+
+  <rect class="frame" x="24" y="24" width="440" height="206" rx="10"/>
+  <text class="note" x="38" y="46">core graph</text>
+  <rect class="node" x="44" y="117" width="84" height="40" rx="8"/>
+  <path class="edge" d="M128 137H148"/>
+
+  <rect class="card" x="150" y="62" width="294" height="150" rx="10"/>
+  <text x="164" y="84"><tspan class="mono b">asr</tspan><tspan class="note" dx="8">version v2</tspan></text>
+  <rect class="node" x="166" y="128" width="70" height="40" rx="8"/>
+  <path class="edge" d="M236 148H254"/>
+
+  <rect class="card2" x="256" y="100" width="172" height="96" rx="8"/>
+  <text x="268" y="121"><tspan class="mono b">encoder</tspan><tspan class="note" dx="8">version v1</tspan></text>
+  <rect class="node" x="270" y="138" width="60" height="36" rx="6"/>
+  <path class="edge" d="M330 156H350"/>
+  <rect class="node" x="352" y="138" width="60" height="36" rx="6"/>
+
+  <path class="link" d="M464 44H500"/>
+  <circle class="dot" cx="464" cy="44" r="3"/>
+  <rect class="chip" x="500" y="31" width="236" height="26" rx="6"/>
+  <text class="mono small" x="512" y="48">{}</text>
+
+  <path class="link" d="M444 80H500"/>
+  <circle class="dot" cx="444" cy="80" r="3"/>
+  <rect class="chip" x="500" y="67" width="236" height="26" rx="6"/>
+  <text class="mono small" x="512" y="84">{asr, v2}</text>
+
+  <path class="link" d="M428 150H500"/>
+  <circle class="dot" cx="428" cy="150" r="3"/>
+  <rect class="chip" x="500" y="137" width="236" height="26" rx="6"/>
+  <text class="mono small" x="512" y="154">{asr, v2}, {encoder, v1}</text>
+
+  <text class="note mid" x="380" y="258">A chain is the path from the core graph to a submodel version: one {id, version} pair per level.</text>
+</svg>

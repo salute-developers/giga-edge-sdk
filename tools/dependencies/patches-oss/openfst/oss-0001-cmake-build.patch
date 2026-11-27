@@ -1,0 +1,83 @@
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Subject: [PATCH] openfst: CMake build of the library
+
+Adds the CMake description of libfst used by the openfst package of the dependency build.
+---
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..b3aff6a13efac3695dba8a4aa8cfbcd04afcc3e4
+--- /dev/null
++++ b/src/CMakeLists.txt
+@@ -0,0 +1,28 @@
++cmake_minimum_required(VERSION 3.13)
++
++project(openfst VERSION 1.8.4 LANGUAGES CXX)
++
++function(setUpTarget TARGET)
++  set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 17)
++
++  set_target_properties(${TARGET} PROPERTIES
++    CXX_EXTENSIONS OFF
++    POSITION_INDEPENDENT_CODE ON
++  )
++
++  target_compile_options(${TARGET}
++    # OpenFst does not throw exceptions, so we do not generate exception
++    # handling code. However, users are free to re-enable exception handling.
++    PRIVATE -fno-exceptions
++
++    # OpenFst assumes char is unsigned; -fsigned-char is likely unsafe.
++    PRIVATE -funsigned-char
++    PRIVATE -Wno-unused-parameter
++    PRIVATE -Wno-sign-compare
++    PRIVATE -Wno-ignored-qualifiers
++    PRIVATE -Wno-unused-local-typedefs
++  )
++endfunction()
++
++add_subdirectory(lib)
++add_subdirectory(script)
+diff --git a/src/lib/CMakeLists.txt b/src/lib/CMakeLists.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..835a5a19b5ec344be85477f78e6b7c4956c80a82
+--- /dev/null
++++ b/src/lib/CMakeLists.txt
+@@ -0,0 +1,25 @@
++cmake_minimum_required(VERSION 3.13)
++
++add_library(fst STATIC
++    compat.cc
++    encode.cc
++    flags.cc
++    fst-types.cc
++    fst.cc
++    mapped-file.cc
++    properties.cc
++    symbol-table-ops.cc
++    symbol-table.cc
++    util.cc
++    weight.cc)
++
++target_include_directories(fst SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/include/")
++setUpTarget(fst)
++
++# libs
++target_link_libraries(fst PRIVATE ${CMAKE_DL_LIBS})
++
++find_library(MATH_LIBRARY m)
++if(MATH_LIBRARY)
++  target_link_libraries(fst PRIVATE ${MATH_LIBRARY})
++endif()
+diff --git a/src/script/CMakeLists.txt b/src/script/CMakeLists.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..16edd7fdb3e8435483e240e741ff13b9d63e96d4
+--- /dev/null
++++ b/src/script/CMakeLists.txt
+@@ -0,0 +1,7 @@
++cmake_minimum_required(VERSION 3.13)
++
++file(GLOB SCRIPT_CPP_FILES "./*.cc")
++
++add_library(fstscript STATIC ${SCRIPT_CPP_FILES})
++setUpTarget(fstscript)
++target_include_directories(fstscript SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/include/")

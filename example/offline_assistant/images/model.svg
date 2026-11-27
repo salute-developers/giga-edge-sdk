@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" role="img" aria-labelledby="title">
+  <title id="title">The model of the demo: the core graph with the submodels spotter, offline_assistant (which holds eou, asr, query_text and function_calling) and tts</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M10 0L0 5L10 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .inner{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .both{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a);marker-start:url(#b)}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="439" rx="12"/>
+
+  <rect class="frame" x="24" y="24" width="712" height="318" rx="10"/>
+  <text class="note" x="38" y="46">core graph</text>
+
+  <rect class="card" x="44" y="100" width="150" height="76" rx="10"/>
+  <text class="mono b" x="58" y="126">spotter</text>
+  <text class="note small" x="58" y="146">the wake word «Гига Ёж»</text>
+  <path class="edge" d="M194 138H228"/>
+
+  <rect class="card" x="230" y="60" width="494" height="180" rx="10"/>
+  <text x="244" y="86"><tspan class="mono b">offline_assistant</tspan><tspan class="note small" dx="8">the session: activation, the end of the phrase, the request</tspan></text>
+  <rect class="inner" x="244" y="104" width="172" height="42" rx="8"/>
+  <text x="254" y="129.5"><tspan class="mono b" style="font-size:12px">eou</tspan><tspan class="note small" dx="8">end of utterance</tspan></text>
+  <rect class="inner" x="244" y="174" width="172" height="42" rx="8"/>
+  <text x="254" y="199.5"><tspan class="mono b" style="font-size:12px">asr</tspan><tspan class="note small" dx="8">speech recognition</tspan></text>
+  <path class="edge" d="M330 146V172"/>
+  <text class="note small" x="340" y="164">the phrase is over</text>
+  <rect class="inner" x="440" y="150" width="112" height="66" rx="8"/>
+  <text class="mono b" x="450" y="176" style="font-size:12px">query_text</text>
+  <text class="note small" x="450" y="196">typed or</text>
+  <text class="note small" x="450" y="211">recognized text</text>
+  <path class="edge" d="M416 195H438"/>
+  <rect class="inner" x="574" y="104" width="136" height="112" rx="8"/>
+  <text class="mono b" x="584" y="130" style="font-size:12px">function_calling</text>
+  <text class="note small" x="584" y="150">the LLM turn</text>
+  <text class="note small" x="584" y="165">with tool calls</text>
+  <path class="edge" d="M552 183H572"/>
+
+  <rect class="card" x="230" y="270" width="300" height="56" rx="10"/>
+  <text x="244" y="294"><tspan class="mono b">tts</tspan><tspan class="note small" dx="8">the reply as speech</tspan></text>
+  <text class="note small" x="244" y="312">a female and a male voice, 24 kHz</text>
+  <path class="edge" d="M300 270V242"/>
+  <text class="note small" x="310" y="260">the reply is spoken</text>
+
+  <path class="both" d="M642 218V376"/>
+  <text class="note small" x="652" y="364">MCP</text>
+  <rect class="host" x="552" y="378" width="180" height="30" rx="8"/>
+  <text class="mid" x="642" y="398" style="font-size:12px">Home Assistant</text>
+  <text class="note" x="24" y="370">Every box is a submodel; its version comes from a part under model/.</text>
+  <text class="note" x="24" y="388">The feature offline_assistant turns on the real versions of eou, asr</text>
+  <text class="note" x="24" y="406">and function_calling, the feature tts the synthesis;</text>
+  <text class="note" x="24" y="424">without them they are stubs.</text>
+</svg>

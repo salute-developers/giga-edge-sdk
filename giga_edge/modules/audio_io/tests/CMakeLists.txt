@@ -1,0 +1,9 @@
+add_giga_edge_test(
+  audio_io_tests
+  SRCS
+    virtual_speaker_test.cpp
+    tee_speaker_test.cpp
+    alsa_cli_test.cpp
+  LIBS
+    audio_io_module
+)

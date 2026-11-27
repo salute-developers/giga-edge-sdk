@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="436" viewBox="0 0 760 436" role="img" aria-labelledby="title">
+  <title id="title">The same inputs under the five inference strategies: on which tick each result comes out, which ticks wait for the model and which inputs are lost</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:12px}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .out{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .none{fill:none;stroke:#8c959f;stroke-dasharray:3 3}
+    .orange{fill:#bc4c00}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .row{stroke:#d0d7de}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="435" rx="12"/>
+
+  <path class="edge" d="M196 24H716"/>
+  <text class="note" x="722" y="28">ticks</text>
+
+  <text class="b" x="24" y="56" style="font-size:12px">input of the node</text>
+  <text class="note small" x="24" y="72">x is data, the rest is empty</text>
+  <rect class="val" x="196" y="40" width="72" height="32" rx="16"/><text class="mono mid" x="232" y="60">x1</text>
+  <rect class="val" x="274" y="40" width="72" height="32" rx="16"/><text class="mono mid" x="310" y="60">x2</text>
+  <rect class="none" x="352" y="40" width="72" height="32" rx="16"/><text class="note small mid" x="388" y="60">empty</text>
+  <rect class="val" x="430" y="40" width="72" height="32" rx="16"/><text class="mono mid" x="466" y="60">x3</text>
+  <rect class="none" x="508" y="40" width="72" height="32" rx="16"/><text class="note small mid" x="544" y="60">empty</text>
+  <rect class="none" x="586" y="40" width="72" height="32" rx="16"/><text class="note small mid" x="622" y="60">empty</text>
+  <rect class="none" x="664" y="40" width="72" height="32" rx="16"/><text class="note small mid" x="700" y="60">empty</text>
+
+  <line class="row" x1="24" y1="90" x2="736" y2="90"/>
+
+  <text class="mono b" x="24" y="120">sync</text>
+  <text class="note small" x="24" y="136">the default</text>
+  <rect class="out" x="196" y="104" width="72" height="32" rx="16"/><text class="mono mid" x="232" y="124">y1</text>
+  <text class="note small mid orange" x="232" y="150">the tick waits</text>
+  <rect class="out" x="274" y="104" width="72" height="32" rx="16"/><text class="mono mid" x="310" y="124">y2</text>
+  <text class="note small mid orange" x="310" y="150">the tick waits</text>
+  <rect class="none" x="352" y="104" width="72" height="32" rx="16"/><text class="note small mid" x="388" y="124">empty</text>
+  <rect class="out" x="430" y="104" width="72" height="32" rx="16"/><text class="mono mid" x="466" y="124">y3</text>
+  <text class="note small mid orange" x="466" y="150">the tick waits</text>
+  <rect class="none" x="508" y="104" width="72" height="32" rx="16"/><text class="note small mid" x="544" y="124">empty</text>
+  <rect class="none" x="586" y="104" width="72" height="32" rx="16"/><text class="note small mid" x="622" y="124">empty</text>
+  <rect class="none" x="664" y="104" width="72" height="32" rx="16"/><text class="note small mid" x="700" y="124">empty</text>
+
+  <text class="mono b" x="24" y="178">skip_if_inferring</text>
+  <rect class="none" x="196" y="162" width="72" height="32" rx="16"/><text class="note small mid" x="232" y="182">empty</text>
+  <rect class="none" x="274" y="162" width="72" height="32" rx="16"/><text class="note small mid" x="310" y="182">empty</text>
+  <text class="note small mid orange" x="310" y="208">x2 is lost</text>
+  <rect class="out" x="352" y="162" width="72" height="32" rx="16"/><text class="mono mid" x="388" y="182">y1</text>
+  <rect class="none" x="430" y="162" width="72" height="32" rx="16"/><text class="note small mid" x="466" y="182">empty</text>
+  <rect class="none" x="508" y="162" width="72" height="32" rx="16"/><text class="note small mid" x="544" y="182">empty</text>
+  <rect class="out" x="586" y="162" width="72" height="32" rx="16"/><text class="mono mid" x="622" y="182">y3</text>
+  <rect class="none" x="664" y="162" width="72" height="32" rx="16"/><text class="note small mid" x="700" y="182">empty</text>
+
+  <text class="mono b" x="24" y="236">wait_till_inferring</text>
+  <rect class="none" x="196" y="220" width="72" height="32" rx="16"/><text class="note small mid" x="232" y="240">empty</text>
+  <rect class="out" x="274" y="220" width="72" height="32" rx="16"/><text class="mono mid" x="310" y="240">y1</text>
+  <text class="note small mid orange" x="310" y="266">the tick waits</text>
+  <rect class="none" x="352" y="220" width="72" height="32" rx="16"/><text class="note small mid" x="388" y="240">empty</text>
+  <rect class="out" x="430" y="220" width="72" height="32" rx="16"/><text class="mono mid" x="466" y="240">y2</text>
+  <rect class="none" x="508" y="220" width="72" height="32" rx="16"/><text class="note small mid" x="544" y="240">empty</text>
+  <rect class="out" x="586" y="220" width="72" height="32" rx="16"/><text class="mono mid" x="622" y="240">y3</text>
+  <rect class="none" x="664" y="220" width="72" height="32" rx="16"/><text class="note small mid" x="700" y="240">empty</text>
+
+  <text class="mono b" x="24" y="294">wait_number_of_chunks</text>
+  <text class="note small" x="24" y="310">chunk_cap: 3</text>
+  <rect class="none" x="196" y="278" width="72" height="32" rx="16"/><text class="note small mid" x="232" y="298">empty</text>
+  <rect class="none" x="274" y="278" width="72" height="32" rx="16"/><text class="note small mid" x="310" y="298">empty</text>
+  <text class="note small mid orange" x="310" y="324">x2 is lost</text>
+  <rect class="none" x="352" y="278" width="72" height="32" rx="16"/><text class="note small mid" x="388" y="298">empty</text>
+  <rect class="out" x="430" y="278" width="72" height="32" rx="16"/><text class="mono mid" x="466" y="298">y1</text>
+  <rect class="none" x="508" y="278" width="72" height="32" rx="16"/><text class="note small mid" x="544" y="298">empty</text>
+  <rect class="none" x="586" y="278" width="72" height="32" rx="16"/><text class="note small mid" x="622" y="298">empty</text>
+  <rect class="out" x="664" y="278" width="72" height="32" rx="16"/><text class="mono mid" x="700" y="298">y3</text>
+
+  <text class="mono b" x="24" y="352">queue</text>
+  <text class="note small" x="24" y="368">max_queue: 2</text>
+  <rect class="none" x="196" y="336" width="72" height="32" rx="16"/><text class="note small mid" x="232" y="356">empty</text>
+  <rect class="none" x="274" y="336" width="72" height="32" rx="16"/><text class="note small mid" x="310" y="356">empty</text>
+  <rect class="out" x="352" y="336" width="72" height="32" rx="16"/><text class="mono mid" x="388" y="356">y1</text>
+  <rect class="out" x="430" y="336" width="72" height="32" rx="16"/><text class="mono mid" x="466" y="356">y2</text>
+  <rect class="none" x="508" y="336" width="72" height="32" rx="16"/><text class="note small mid" x="544" y="356">empty</text>
+  <rect class="out" x="586" y="336" width="72" height="32" rx="16"/><text class="mono mid" x="622" y="356">y3</text>
+  <rect class="none" x="664" y="336" width="72" height="32" rx="16"/><text class="note small mid" x="700" y="356">empty</text>
+
+  <text class="note mid" x="380" y="408">y1 is the result for x1. The model here needs a little more than one tick for an inference.</text>
+  <text class="note small mid" x="380" y="424">With another timing the results of skip_if_inferring, wait_till_inferring and queue move to other ticks.</text>
+</svg>

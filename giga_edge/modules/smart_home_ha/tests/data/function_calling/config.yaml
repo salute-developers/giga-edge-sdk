@@ -1,0 +1,347 @@
+# Function calling of the offline assistant demo: the LLM gets the request and the scene of the house and answers
+# with a reply and calls of Home Assistant tools (the smart_home_ha module, ha_* nodes).
+#   - The room of the assistant is the current_room param of the ha_catalog node (an HA area): a line of the system
+#     prompt. The gender and the pronoun of the persona come from the core: a line of the system prompt names the
+#     character and how it addresses the user.
+#   - A scene or a script of HA is shown to the model as "Сценарий <name>": scenario_prefix of the ha_scene node.
+#   - The vocabulary of the model has no music, date and volume functions: the model declines such requests.
+#
+# INPUTS:
+#   text               string, the request; an empty string means none.
+#   follow_up          bool, the request answers a clarifying question of the assistant. It matters only to a prompt
+#                      head of the llm node, and this graph has none.
+#   cancel             bool, drops the turn: unfinished MCP calls are cancelled.
+#   dialogue_reset     bool, forgets the dialogue history.
+#   speech_synthesized bool, the reply is spoken: the request of the next turn is warmed up.
+#   gender, pronoun    string, the persona of the host.
+#
+# OUTPUTS:
+#   assistant_result   the result of the LLM turn.
+version: function_calling.oss.1.0.0
+lib_version: 1.35
+
+model_environments:
+  llm_pool:
+    type: thread_pool
+    thread_pool:
+      threads_count: 1
+      thread_name_prefix: llm/
+
+nodes:
+  # cancel drops the turn (a new activation or a reply of the rules in offline_assistant): unfinished MCP calls are
+  # cancelled, as on a reset.
+  - name: fc_abort
+    type: logical_expression
+    inputs:
+      dialogue_reset: dialogue_reset
+      cancel: cancel
+    outputs:
+      result: fc_abort
+    params:
+      expression: "dialogue_reset || cancel"
+
+  - name: user_query_from_text
+    type: user_query_from_text
+    inputs:
+      text: text
+    outputs:
+      user_query: user_query
+    params:
+      request_id_prefix: "fc-request-"
+
+  - name: mcp_completion_pickup
+    type: mcp_completion_pickup
+    inputs:
+      dialogue_reset: fc_abort
+      user_query: user_query
+      submission: mcp_action_result
+    outputs:
+      mcp_completions: mcp_completions
+    params:
+      environment_name: mcp
+      consumer_name: function_calling_executor
+      completion_queue_capacity: 64
+      owns_consumer_registration: false
+      local_debug_enabled: true
+      drain_limit: 16
+
+  - name: ha_tool_result
+    type: ha_tool_result
+    inputs:
+      mcp_completions: mcp_completions
+    outputs:
+      tool_results: tool_results
+      continuations: ha_continuations
+
+  - name: fc_tool_result
+    type: fc_tool_result
+    inputs:
+      tool_results: tool_results
+    outputs:
+      tool_result: tool_result
+    params:
+      success: '{"status": "success"}'
+      success_with_value: '{"status": "success", "value": {value}}'
+      failure: '{"status": "fail", "error": {error}}'
+
+  - name: mcp_catalog_snapshot
+    type: mcp_catalog_snapshot
+    inputs:
+      user_query: user_query
+    outputs:
+      mcp_catalog_snapshot: mcp_catalog_snapshot
+    params:
+      environment_name: mcp
+      consumer_name: function_calling_scene
+      include_shared_latest_resource_states: true
+      local_debug_enabled: true
+      include_tools: true
+      include_resources: true
+      include_resource_templates: false
+      include_latest_resource_states: true
+
+  - name: ha_catalog
+    type: ha_catalog
+    inputs:
+      mcp_catalog_snapshot: mcp_catalog_snapshot
+    outputs:
+      ha_catalog: ha_catalog
+      current_room: speaker_room
+    params:
+      environment_name: mcp
+      # The HA area where the assistant stands: requests without a room go there; empty means no room.
+      current_room: "Гостиная"
+      # HA sends no notifications about new and renamed entities, so the context is reread.
+      refresh_interval_ms: 60000
+      # The model was trained on scenes where every device has the read-only parameter online.
+      include_online: true
+
+  - name: ha_scene
+    type: ha_scene
+    inputs:
+      ha_catalog: ha_catalog
+    outputs:
+      scene_snapshot: scene_snapshot
+    params:
+      max_chars: 18000
+      # A scene or a script of Home Assistant is shown to the model as "Сценарий <name>": it is run by
+      # "включи сценарий <name>".
+      scenario_prefix: "Сценарий"
+
+  # Warm up the request of the next turn while the CPU is free: when a session starts or times out (cancel) and when
+  # the reply is synthesized and only plays. With a turn still running there is no warm-up.
+  - name: warm_now
+    type: logical_expression
+    inputs:
+      cancel: cancel
+      speech_synthesized: speech_synthesized
+    outputs:
+      result: warm_now
+    params:
+      expression: "cancel || speech_synthesized"
+
+  # The system prompt: a room line and a persona; with no persona selected, only the room.
+  - name: persona_system_prompt
+    type: persona_system_prompt
+    inputs:
+      gender: gender
+      pronoun: pronoun
+      room: speaker_room
+    outputs:
+      system_prompt: persona_system_prompt
+    params:
+      default: ""
+      room_template: "Ты стоишь в «{room}»."
+      prompts:
+        male/informal: "Ты — мужской персонаж. Обращайся к пользователю на «ты»."
+        male/formal: "Ты — мужской персонаж. Обращайся к пользователю на «вы»."
+        female/informal: "Ты — женский персонаж. Обращайся к пользователю на «ты»."
+        female/formal: "Ты — женский персонаж. Обращайся к пользователю на «вы»."
+
+  - name: request
+    type: dialogue_request_builder
+    inputs:
+      dialogue_reset: dialogue_reset
+      system_prompt: persona_system_prompt
+      # Precompute the system prompt, the scene and the history for the next request (what is already in the KV cache
+      # is not recomputed).
+      warm: warm_now
+      user_query: user_query
+      # A reply to the assistant's clarifying question: a prompt head of the llm node would not decline it.
+      follow_up: follow_up
+      scene_snapshot: scene_snapshot
+      tool_result: tool_result
+      dialogue_history: dialogue_history
+    outputs:
+      assistant_request: assistant_request
+    params:
+      system_prompt: ""
+      warm_on_scene_change: true
+      # On a persona change, recompute the system prompt and the scene while idle, not on a request.
+      warm_on_system_change: true
+
+  - name: llm
+    type: llm_generate
+    inputs:
+      cancel: cancel
+      assistant_request: assistant_request
+    outputs:
+      stream_chunk: model_stream_chunk
+    params:
+      on_new_request: replace
+      # Generation runs in a thread of its own: a tick, and the wake word with it, does not wait for the reply. A
+      # cancel or a new request waits only for the step the thread is in.
+      inference_strategy:
+        type: wait_till_inferring
+        thread_pool_name: llm_pool
+      template:
+        system: {prefix: "system<|role_sep|>\n", suffix: "<|message_sep|>\n\n"}
+        # The scene and its separator appear only in the first user message, as in model training.
+        scene: {prefix: "", suffix: "<sep>"}
+        user: {prefix: "user<|role_sep|>\n", suffix: "<|message_sep|>\n\n"}
+        assistant: {prefix: "assistant<|role_sep|>\n", suffix: "<|message_sep|>\n\n"}
+        tool: {prefix: "function results<|role_sep|>\n", suffix: "<|message_sep|>\n\n"}
+        generation_prefix: "assistant<|role_sep|>\n"
+        render_empty_system: true
+        render_empty_scene: true
+        scene_in_user: true
+      tool_call_parser:
+        name: compact_tool_call_v1
+        # Several calls in one generation are run one by one, the next after the result of the previous one.
+        parallel_tool_calls: true
+        start_function_call_token: "<start_function_call>"
+        function_token_prefixes: ["<f_", "<function_"]
+        arg_separator: "<arg_sep>"
+        stop_markers:
+          - "</s>"
+          - "<|message_sep|>"
+        arg_formats:
+          device: {tag_prefixes: ["d_"], indexed: true}
+          parameter: {tag_prefixes: ["p_rw_", "p_ro_"]}
+          delta: {type: string}
+        # A function token that is not listed here makes the call malformed.
+        function_specs:
+          - name: "set_device_parameter"
+            token: "<f_set_device_parameter>"
+            args: [{name: device_id, format: device}, {name: parameter_name, format: parameter}, value]
+          - name: "get_device_parameter"
+            token: "<f_get_device_parameter>"
+            args: [{name: device_id, format: device}, {name: parameter_name, format: parameter}]
+          - name: "relative_change"
+            token: "<f_relative_change>"
+            args: [{name: device_id, format: device}, {name: parameter_name, format: parameter}, {name: value, format: delta}]
+          - name: "copy_device_parameter"
+            token: "<f_copy_device_parameter>"
+            # The source comes first, then the destination and the parameter.
+            args: [{name: source_device_id, format: device}, {name: device_id, format: device}, {name: parameter_name, format: parameter}]
+      # Room for a batch of calls in one reply. A batch cut by this limit is dropped whole: none of its calls runs.
+      max_new_tokens: 256
+      prefill_chunk_tokens: 128
+      # The LLM turn log writes to stdout, where the demo prints the request and the reply.
+      local_debug_enabled: false
+      debug_dump_prompt: false
+      llm_interpreter_params:
+        model_path: function_calling.gguf
+        stop_sequence: "<|message_sep|>\n\n"
+        n_ctx: 3072
+        n_batch: 128
+        n_threads: 3
+        n_threads_batch: 3
+        flash_attn: true
+        use_mmap: false
+        use_mlock: false
+        swa_full: true
+        mtp_draft_max: 3
+        temp: 0.0
+        top_p: 1.0
+
+  - name: result
+    type: stream_to_assistant_result
+    inputs:
+      stream_chunk: model_stream_chunk
+    outputs:
+      assistant_result: assistant_result_raw
+
+  - name: guard
+    type: tool_loop_guard
+    inputs:
+      dialogue_reset: dialogue_reset
+      assistant_result: assistant_result_raw
+      user_query: user_query
+      tool_result: tool_result
+      cancel: cancel
+    outputs:
+      assistant_result: guarded_result
+    params:
+      max_tool_rounds: 25
+      break_on_repeated_call: true
+      parallel_tool_calls: true
+      # All the calls of a turn (a batch is several of them); at the limit the turn ends with an error.
+      max_tool_calls: 60
+      # The model repeats a call that the house has just failed: the turn ends with a reply by the error code of the
+      # adapter (smart_home_ha) instead of "something went wrong", the reply stays in the dialogue history.
+      failed_call_reply: "Не получилось это сделать."
+      failed_call_replies:
+        UNKNOWN_PARAMETER: "Это устройство так не умеет."
+        UNKNOWN_FUNCTION: "Этого я пока не умею."
+        PARAMETER_READ_ONLY: "Это можно только узнать, но не изменить."
+        BAD_VALUE: "Не могу поставить такое значение."
+        PERCENTAGE_NOT_ALLOWED: "Это задаётся не в процентах."
+        RELATIVE_NOT_ALLOWED: "Это можно задать только точным значением."
+        DEVICE_UNREACHABLE: "Устройство сейчас недоступно."
+      local_debug_enabled: true
+
+  - name: ha_action_resolver
+    type: ha_action_resolver
+    inputs:
+      user_query: user_query
+      # A reset and a turn cancel discard pending reads and writes, including a copy.
+      dialogue_reset: fc_abort
+      assistant_result: guarded_result
+      ha_catalog: ha_catalog
+      continuations: ha_continuations
+    outputs:
+      mcp_resolved_action: ha_action
+
+  - name: mcp_action_executor
+    type: mcp_action_executor
+    inputs:
+      mcp_resolved_action: ha_action
+    outputs:
+      mcp_action_result: mcp_action_result
+    params:
+      environment_name: mcp
+      consumer_name: function_calling_executor
+      completion_queue_capacity: 64
+      local_debug_enabled: true
+      call_id_prefix: "fc-mcp-action-"
+
+  - name: history
+    type: dialogue_state_update
+    inputs:
+      previous_history: dialogue_history
+      user_query: user_query
+      assistant_result: guarded_result
+      tool_result: tool_result
+      scene_snapshot: scene_snapshot
+      dialogue_reset: dialogue_reset
+      cancel: cancel
+    outputs:
+      dialogue_history: dialogue_history
+      turn_trace: turn_trace
+    params:
+      # The dialogue history for follow-up listening; offline_assistant resets it after 45 s without activations.
+      max_turns: 4
+      trim_to_turns: 2
+      # A reply cut by the token limit is left out of the history: the model was not trained on cut replies.
+      drop_truncated_reply: true
+
+  # The output of the submodel is written once, here (its stub version writes the same name): inside the graph the
+  # result is guarded_result. The trace of the turn (LLM rounds, MCP calls) is attached to it.
+  - name: publish_assistant_result
+    type: assistant_result_relay
+    inputs:
+      input: guarded_result
+      trace: turn_trace
+    outputs:
+      assistant_result: assistant_result

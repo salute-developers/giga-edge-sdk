@@ -1,0 +1,21 @@
+tensorflow/lite: model_builder::Tensor declared before the friend in Buffer (MSVC).
+
+`friend class Tensor;` in model_builder::Buffer comes before model_builder::Tensor is declared, and the enclosing tflite
+already has a Tensor of the schema (schema_generated.h). MSVC (19.50) binds the friend to tflite::Tensor, so the
+constructor model_builder::Tensor(Buffer) cannot access Buffer::builder_ (C2248) and tflite does not build for
+windows_x64. GCC and Clang declare a new class in model_builder, as the standard says. A forward declaration in
+model_builder removes the ambiguity.
+
+diff --git a/tensorflow/lite/core/model_building.h b/tensorflow/lite/core/model_building.h
+index 8b9b87e..66a4b96 100644
+--- a/tensorflow/lite/core/model_building.h
++++ b/tensorflow/lite/core/model_building.h
+@@ -75,6 +75,8 @@ struct [[nodiscard]] AffineQuantization {
+ 
+ using Quantization = std::variant<NoQuantization, AffineQuantization>;
+ 
++class Tensor;
++
+ // Represents a buffer in the TFLite graph.
+ //
+ // Copyable but you shouldn't create such an object by yourself. Use the

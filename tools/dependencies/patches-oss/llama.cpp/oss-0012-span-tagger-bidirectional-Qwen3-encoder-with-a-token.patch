@@ -1,0 +1,546 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 12/12] span-tagger: bidirectional Qwen3 encoder with a token
+ tagging head
+
+Architecture "span-tagger": the qwen3 backbone weights load as for qwen3.
+The graph runs the qwen3 layers with attention without a KV cache
+(bidirectional, as for BERT), outputs every token, normalizes the outputs of
+the tapped layers (tagger.tap_layers) with a parameter-free layer norm,
+concatenates them and applies Linear -> GELU -> Linear. The logits come out
+as token embeddings (n_embd_out = number of tags), so the context needs
+embeddings = true, pooling NONE and n_ubatch >= n_tokens. The head is not
+quantized. The sliding window of the backbone config is ignored: the encoder
+attends over the whole text.
+
+test-llama-archs skips the architecture (its dummy model has no tagger
+head); test-span-tagger checks that a sliding window key changes nothing.
+---
+ src/llama-arch.cpp         |   7 ++
+ src/llama-arch.h           |   5 ++
+ src/llama-model.cpp        |   4 +
+ src/llama-quant.cpp        |   5 ++
+ src/models/models.h        |  23 +++++
+ src/models/span-tagger.cpp | 174 +++++++++++++++++++++++++++++++++++++
+ tests/CMakeLists.txt       |   1 +
+ tests/test-llama-archs.cpp |   3 +
+ tests/test-span-tagger.cpp | 154 ++++++++++++++++++++++++++++++++
+ 9 files changed, 376 insertions(+)
+ create mode 100644 src/models/span-tagger.cpp
+ create mode 100644 tests/test-span-tagger.cpp
+
+diff --git a/src/llama-arch.cpp b/src/llama-arch.cpp
+index 850737ecaa92f2952a3dc4f58eb0faedff074acd..5ef7e4141d440a1a32f6241ba26f9fb7cb662675 100644
+--- a/src/llama-arch.cpp
++++ b/src/llama-arch.cpp
+@@ -34,6 +34,7 @@ static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
+     { LLM_ARCH_QWEN2MOE,         "qwen2moe"         },
+     { LLM_ARCH_QWEN2VL,          "qwen2vl"          },
+     { LLM_ARCH_QWEN3,            "qwen3"            },
++    { LLM_ARCH_SPAN_TAGGER,      "span-tagger"      },
+     { LLM_ARCH_QWEN3MOE,         "qwen3moe"         },
+     { LLM_ARCH_QWEN3NEXT,        "qwen3next"        },
+     { LLM_ARCH_QWEN3VL,          "qwen3vl"          },
+@@ -371,6 +372,8 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
+     { LLM_KV_DECISION_ROUTING_BLOCK_COUNT, "%s.decision.routing_block_count" },
+     { LLM_KV_DECISION_HEAD_COUNT,          "%s.decision.head_count"          },
+ 
++    { LLM_KV_TAGGER_TAP_LAYERS,        "%s.tagger.tap_layers"        },
++
+     { LLM_KV_TARGET_LAYERS,         "%s.target_layers"        },
+     { LLM_KV_TARGET_HIDDEN_SIZE,    "%s.target_hidden_size"   },
+     { LLM_KV_NORM_BEFORE_RESIDUAL,  "%s.norm_before_residual" },
+@@ -506,6 +509,8 @@ static const std::map<llm_tensor, const char *> LLM_TENSOR_NAMES = {
+     { LLM_TENSOR_DECISION_SCALES,                        "decision.scales" },
+     { LLM_TENSOR_DECISION_SCORER,                        "decision.scorer" },
+     { LLM_TENSOR_DECISION_SCORER_OUT,                    "decision.scorer_out" },
++    { LLM_TENSOR_TAGGER_FC1,                             "tagger.fc1" },
++    { LLM_TENSOR_TAGGER_FC2,                             "tagger.fc2" },
+     { LLM_TENSOR_ENC_OUTPUT_NORM,                        "enc.output_norm" },
+     { LLM_TENSOR_FFN_GATE_INP_SHEXP,                     "blk.%d.ffn_gate_inp_shexp" },
+     { LLM_TENSOR_SSM_A_NOSCAN,                           "blk.%d.ssm_a" },
+@@ -769,6 +774,8 @@ static const std::map<llm_tensor, llm_tensor_info> LLM_TENSOR_INFOS = {
+     {LLM_TENSOR_DECISION_SCALES,            {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL}},
+     {LLM_TENSOR_DECISION_SCORER,            {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL_MAT}},
+     {LLM_TENSOR_DECISION_SCORER_OUT,        {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL_MAT}},
++    {LLM_TENSOR_TAGGER_FC1,                 {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL_MAT}},
++    {LLM_TENSOR_TAGGER_FC2,                 {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL_MAT}},
+     {LLM_TENSOR_DENSE_2_OUT,                {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL_MAT}}, // Dense layer output
+     {LLM_TENSOR_DENSE_3_OUT,                {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL_MAT}}, // Dense layer output
+     {LLM_TENSOR_OUTPUT_NORM,                {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL}},
+diff --git a/src/llama-arch.h b/src/llama-arch.h
+index 24068fb7a43a4e3c7a4ab0330bf7be3c432a04bc..ca76b186233d0f4c15f237f9e0b2a64a8e05faad 100644
+--- a/src/llama-arch.h
++++ b/src/llama-arch.h
+@@ -39,6 +39,7 @@ enum llm_arch {
+     LLM_ARCH_QWEN2MOE,
+     LLM_ARCH_QWEN2VL,
+     LLM_ARCH_QWEN3,
++    LLM_ARCH_SPAN_TAGGER,
+     LLM_ARCH_QWEN3MOE,
+     LLM_ARCH_QWEN3NEXT,
+     LLM_ARCH_QWEN3VL,
+@@ -417,6 +418,8 @@ enum llm_kv {
+     LLM_KV_DECISION_ROUTING_BLOCK_COUNT,
+     LLM_KV_DECISION_HEAD_COUNT,
+ 
++    LLM_KV_TAGGER_TAP_LAYERS,
++
+     LLM_KV_TARGET_LAYERS,
+     LLM_KV_TARGET_HIDDEN_SIZE,
+     LLM_KV_DFLASH_BLOCK_SIZE,
+@@ -677,6 +680,8 @@ enum llm_tensor {
+     LLM_TENSOR_DECISION_SCALES,
+     LLM_TENSOR_DECISION_SCORER,
+     LLM_TENSOR_DECISION_SCORER_OUT,
++    LLM_TENSOR_TAGGER_FC1,
++    LLM_TENSOR_TAGGER_FC2,
+     LLM_TENSOR_CONV1D,
+     LLM_TENSOR_CONVNEXT_DW,
+     LLM_TENSOR_CONVNEXT_NORM,
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index 29fdfae7cce601621a0e49d1ca8996b3f8e05435..febdd255a77fc33840c742cb482d81232d8ba7c4 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -110,6 +110,8 @@ static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params
+             return new llama_model_qwen2moe(params);
+         case LLM_ARCH_QWEN3:
+             return new llama_model_qwen3(params);
++        case LLM_ARCH_SPAN_TAGGER:
++            return new llama_model_span_tagger(params);
+         case LLM_ARCH_QWEN3MOE:
+             return new llama_model_qwen3moe(params);
+         case LLM_ARCH_QWEN3VL:
+@@ -2371,6 +2373,7 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params,
+         case LLM_ARCH_WAVTOKENIZER_DEC:
+         case LLM_ARCH_MODERN_BERT:
+         case LLM_ARCH_GEMMA_EMBEDDING:
++        case LLM_ARCH_SPAN_TAGGER:
+         case LLM_ARCH_DREAM:
+         case LLM_ARCH_LLADA:
+         case LLM_ARCH_LLADA_MOE:
+@@ -3137,6 +3140,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
+         case LLM_ARCH_DREAM:
+         case LLM_ARCH_QWEN2MOE:
+         case LLM_ARCH_QWEN3:
++        case LLM_ARCH_SPAN_TAGGER:
+         case LLM_ARCH_QWEN3MOE:
+         case LLM_ARCH_LLADA_MOE:
+         case LLM_ARCH_RND1:
+diff --git a/src/llama-quant.cpp b/src/llama-quant.cpp
+index 821b4798c20d4d83283a2906cef9c4b616d6b203..3761cccaed5c97a2653279f29cddb5a68012dbc0 100644
+--- a/src/llama-quant.cpp
++++ b/src/llama-quant.cpp
+@@ -319,6 +319,11 @@ static bool tensor_allows_quantization(const llama_model_quantize_params * param
+     quantize &= name != LLM_TN(arch)(LLM_TENSOR_POS_EMBD,    "weight");
+     quantize &= name != LLM_TN(arch)(LLM_TENSOR_TOKEN_TYPES, "weight");
+ 
++    // the head of the span tagger is small and computed in F32
++    if (arch == LLM_ARCH_SPAN_TAGGER) {
++        quantize &= name.compare(0, 7, "tagger.") != 0;
++    }
++
+     // do not quantize Mamba/Kimi's small conv1d weights
+     // NOTE: can't use LLM_TN here because the layer number is not known
+     quantize &= name.find("ssm_conv1d") == std::string::npos;
+diff --git a/src/models/models.h b/src/models/models.h
+index 14e5c874fa67b524b1b8f352620a0080f5f9264f..26697a60c248f43135a8f44b3f4e38151f06c221 100644
+--- a/src/models/models.h
++++ b/src/models/models.h
+@@ -599,6 +599,29 @@ struct llama_model_qwen3 : public llama_model_base {
+ };
+ 
+ 
++// Qwen3 as a bidirectional encoder with a token tagging head: layer norm without parameters of the outputs of
++// some layers, side by side, Linear -> GELU -> Linear. One logit per tag for every token (n_embd_out).
++// The weights of the backbone are loaded as for qwen3, the graph is its own: no KV cache, every token is output.
++struct llama_model_span_tagger : public llama_model_qwen3 {
++    llama_model_span_tagger(const struct llama_model_params & params) : llama_model_qwen3(params) {}
++    void load_arch_hparams(llama_model_loader & ml) override;
++    void load_arch_tensors(llama_model_loader & ml) override;
++
++    std::vector<uint32_t> tap_layers; // 1-based, n_layer is the output after the final norm
++
++    ggml_tensor * fc1   = nullptr;
++    ggml_tensor * fc1_b = nullptr;
++    ggml_tensor * fc2   = nullptr;
++    ggml_tensor * fc2_b = nullptr;
++
++    struct graph : public llm_graph_context {
++        graph(const llama_model & model, const llm_graph_params & params);
++    };
++
++    std::unique_ptr<llm_graph_context> build_arch_graph(const llm_graph_params & params) const override;
++};
++
++
+ struct llama_model_qwen3moe : public llama_model_base {
+     llama_model_qwen3moe(const struct llama_model_params & params) : llama_model_base(params) {}
+     void load_arch_hparams(llama_model_loader & ml) override;
+diff --git a/src/models/span-tagger.cpp b/src/models/span-tagger.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..df0d9bb862231922c55ea8dbe2b1cf4022ed9bd9
+--- /dev/null
++++ b/src/models/span-tagger.cpp
+@@ -0,0 +1,174 @@
++#include "models.h"
++
++#include <algorithm>
++#include <stdexcept>
++
++void llama_model_span_tagger::load_arch_hparams(llama_model_loader & ml) {
++    llama_model_qwen3::load_arch_hparams(ml);
++
++    // a bidirectional encoder over the whole text: a sliding window key from the backbone config does not apply
++    hparams.swa_type = LLAMA_SWA_TYPE_NONE;
++    hparams.n_swa    = 0;
++    std::fill(hparams.is_swa_impl.begin(), hparams.is_swa_impl.end(), false);
++
++    // the normalisation of the taps has no weights, torch.nn.functional.layer_norm
++    ml.get_key(LLM_KV_ATTENTION_LAYERNORM_EPS, hparams.f_norm_eps);
++
++    // 1-based: N is the output of layer N, n_layer is the output after the final norm
++    ml.get_arr(LLM_KV_TAGGER_TAP_LAYERS, tap_layers);
++    if (tap_layers.empty()) {
++        throw std::runtime_error("the tagger needs at least one tapped layer");
++    }
++    for (const uint32_t il : tap_layers) {
++        if (il < 1 || il > hparams.n_layer()) {
++            throw std::runtime_error("tapped layer out of range");
++        }
++    }
++}
++
++void llama_model_span_tagger::load_arch_tensors(llama_model_loader & ml) {
++    llama_model_qwen3::load_arch_tensors(ml);
++
++    LLAMA_LOAD_LOCALS;
++
++    const auto * w_fc1 = ml.get_weight(tn(LLM_TENSOR_TAGGER_FC1, "weight").str().c_str());
++    if (w_fc1 == nullptr) {
++        throw std::runtime_error("the tagger head is missing");
++    }
++    const int64_t n_in     = n_embd * (int64_t) tap_layers.size();
++    const int64_t n_hidden = w_fc1->tensor->ne[1];
++    const int64_t n_tags   = hparams.n_embd_out();
++
++    fc1   = create_tensor(tn(LLM_TENSOR_TAGGER_FC1, "weight"), {n_in, n_hidden}, 0);
++    fc1_b = create_tensor(tn(LLM_TENSOR_TAGGER_FC1, "bias"),   {n_hidden}, 0);
++    fc2   = create_tensor(tn(LLM_TENSOR_TAGGER_FC2, "weight"), {n_hidden, n_tags}, 0);
++    fc2_b = create_tensor(tn(LLM_TENSOR_TAGGER_FC2, "bias"),   {n_tags}, 0);
++}
++
++std::unique_ptr<llm_graph_context> llama_model_span_tagger::build_arch_graph(const llm_graph_params & params) const {
++    return std::make_unique<graph>(*this, params);
++}
++
++// The layers are those of qwen3.cpp with three differences: attention without a KV cache (bidirectional,
++// as for BERT), no selection of the output rows (the taps of the earlier layers have a row per token)
++// and the tagging head instead of the LM head.
++llama_model_span_tagger::graph::graph(const llama_model & model_base, const llm_graph_params & params) :
++    llm_graph_context(params) {
++    const auto & model = static_cast<const llama_model_span_tagger &>(model_base);
++
++    const int64_t n_embd_head = hparams.n_embd_head_v();
++
++    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
++    GGML_ASSERT(n_embd_head == n_rot);
++    GGML_ASSERT(n_outputs == n_tokens && "the span tagger needs the output of every token");
++
++    ggml_tensor * cur;
++    ggml_tensor * inpL;
++
++    inpL = build_inp_embd(model.tok_embd);
++
++    // inp_pos - contains the positions
++    ggml_tensor * inp_pos = build_inp_pos();
++
++    auto * inp_attn = build_attn_inp_no_cache();
++
++    // the output of every layer before the final norm
++    std::vector<ggml_tensor *> l_out;
++    l_out.reserve(n_layer);
++
++    for (int il = 0; il < n_layer; ++il) {
++        ggml_tensor * inpSA = inpL;
++
++        // norm
++        cur = build_norm(inpL,
++                model.layers[il].attn_norm, NULL,
++                LLM_NORM_RMS, il);
++        cb(cur, "attn_norm", il);
++
++        // self-attention
++        {
++            // compute Q and K and RoPE them
++            auto [Qcur, Kcur, Vcur] = build_qkv(model.layers[il], cur,
++                    n_embd_head, n_head, n_head_kv, il);
++
++            Qcur = build_norm(Qcur, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, il);
++            cb(Qcur, "Qcur_normed", il);
++
++            // per-dim frequency factors (llama3 rope scaling); nullptr when the file has none
++            ggml_tensor * rope_factors = model.get_rope_factors(cparams, il);
++
++            Qcur = ggml_rope_ext(
++                    ctx0, Qcur, inp_pos, rope_factors,
++                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
++                    ext_factor, attn_factor, beta_fast, beta_slow
++                    );
++
++            Kcur = build_norm(Kcur, model.layers[il].attn_k_norm, NULL, LLM_NORM_RMS, il);
++            cb(Kcur, "Kcur_normed", il);
++
++            Kcur = ggml_rope_ext(
++                    ctx0, Kcur, inp_pos, rope_factors,
++                    n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
++                    ext_factor, attn_factor, beta_fast, beta_slow
++                    );
++
++            cb(Qcur, "Qcur", il);
++            cb(Kcur, "Kcur", il);
++            cb(Vcur, "Vcur", il);
++
++            cur = build_attn(inp_attn,
++                    model.layers[il].wo, model.layers[il].wo_b, model.layers[il].wo_s,
++                    Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
++        }
++        ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inpSA);
++        cb(ffn_inp, "ffn_inp", il);
++
++        // feed-forward network
++        cur = build_norm(ffn_inp,
++                model.layers[il].ffn_norm, NULL,
++                LLM_NORM_RMS, il);
++        cb(cur, "ffn_norm", il);
++
++        cur = build_ffn(cur,
++                model.layers[il].ffn_up,   NULL, model.layers[il].ffn_up_s,
++                model.layers[il].ffn_gate, NULL, model.layers[il].ffn_gate_s,
++                model.layers[il].ffn_down, NULL, model.layers[il].ffn_down_s,
++                NULL,
++                LLM_FFN_SILU, LLM_FFN_PAR, il);
++        cb(cur, "ffn_out", il);
++
++        cur = ggml_add(ctx0, cur, ffn_inp);
++
++        cur = build_cvec(cur, il);
++        cb(cur, "l_out", il);
++        l_out.push_back(cur);
++
++        // input for next layer
++        inpL = cur;
++    }
++
++    // after the final norm: [n_embd, n_tokens]
++    ggml_tensor * last = build_norm(inpL,
++            model.output_norm, NULL,
++            LLM_NORM_RMS, -1);
++    cb(last, "result_norm", -1);
++
++    // layer norm without parameters of each tapped layer, then the taps side by side
++    cur = nullptr;
++    for (const uint32_t il : model.tap_layers) {
++        ggml_tensor * tap = il == (uint32_t) n_layer ? last : l_out[il - 1];
++        tap = build_norm(tap, nullptr, nullptr, LLM_NORM, -1);
++        cur = cur == nullptr ? tap : ggml_concat(ctx0, cur, tap, 0);
++    }
++    cb(cur, "tagger_taps", -1);
++
++    // head: Linear -> GELU -> Linear, one logit per tag
++    cur = ggml_add(ctx0, ggml_mul_mat(ctx0, model.fc1, cur), model.fc1_b);
++    cur = ggml_gelu_erf(ctx0, cur);
++    cur = ggml_add(ctx0, ggml_mul_mat(ctx0, model.fc2, cur), model.fc2_b);
++
++    cb(cur, "result_tagger", -1);
++    res->t_embd = cur;
++
++    ggml_build_forward_expand(gf, cur);
++}
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index ef9ee6a6a09524687c3cab6c38b206c1b531a52d..85b8f35aaa5bec49ce0a21554bfd2c6f901717be 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -286,6 +286,7 @@ llama_build_and_test(test-model-resolution.cpp)
+ # the test serves its repos from an httplib server, and the library links it privately
+ target_link_libraries(test-model-resolution PRIVATE cpp-httplib)
+ 
++llama_build_and_test(test-span-tagger.cpp)
+ llama_build_and_test(test-mtp-rope-factors.cpp)
+ 
+ if (NOT LLAMA_SANITIZE_ADDRESS AND NOT GGML_SCHED_NO_REALLOC)
+diff --git a/tests/test-llama-archs.cpp b/tests/test-llama-archs.cpp
+index 7a76efccc3d9eba3b59a6d1802a017c4cfb9e7de..f6255e3cde8466f68d9bfda6cea783526c7cfa3f 100644
+--- a/tests/test-llama-archs.cpp
++++ b/tests/test-llama-archs.cpp
+@@ -732,6 +732,9 @@ static bool arch_supported(const llm_arch arch) {
+     if (arch == LLM_ARCH_CLEF) {
+         return false; // TODO decision head tensors
+     }
++    if (arch == LLM_ARCH_SPAN_TAGGER) {
++        return false; // needs tagger.tap_layers and the tagger head, an encoder without KV cache
++    }
+     if (arch == LLM_ARCH_DEEPSEEK2OCR) {
+         return false;
+     }
+diff --git a/tests/test-span-tagger.cpp b/tests/test-span-tagger.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b0221122d08877b78972ccd59ce8c854ab8cc5a9
+--- /dev/null
++++ b/tests/test-span-tagger.cpp
+@@ -0,0 +1,154 @@
++// span-tagger is a bidirectional encoder: a sliding window key inherited from the Qwen3 backbone config must not
++// turn it into an iSWA model. Two tiny random models that differ only in that key must give the same tags.
++
++#include "llama.h"
++#include "ggml.h"
++#include "gguf.h"
++
++#include <cmath>
++#include <cstdint>
++#include <cstdio>
++#include <cstring>
++#include <random>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++#define CHECK(condition) do { if (!(condition)) throw std::runtime_error("check failed: " #condition); } while (false)
++
++static const int64_t n_vocab = 32, n_embd = 32, n_head = 2, n_head_kv = 1, n_ff = 64, n_layer = 2;
++static const int64_t n_hidden = 16, n_tags = 5, n_head_dim = n_embd / n_head;
++
++static void write_model(const std::string & path, bool sliding_window) {
++    const char * arch = "span-tagger";
++    gguf_context * gguf = gguf_init_empty();
++    auto key = [&](const char * name) { return std::string(arch) + "." + name; };
++
++    gguf_set_val_str(gguf, "general.architecture", arch);
++    gguf_set_val_str(gguf, "tokenizer.ggml.model", "no_vocab");
++    gguf_set_val_u32(gguf, key("vocab_size").c_str(),                     n_vocab);
++    gguf_set_val_u32(gguf, key("context_length").c_str(),                 64);
++    gguf_set_val_u32(gguf, key("embedding_length").c_str(),               n_embd);
++    gguf_set_val_u32(gguf, key("embedding_length_out").c_str(),           n_tags);
++    gguf_set_val_u32(gguf, key("feed_forward_length").c_str(),            n_ff);
++    gguf_set_val_u32(gguf, key("block_count").c_str(),                    n_layer);
++    gguf_set_val_u32(gguf, key("attention.head_count").c_str(),           n_head);
++    gguf_set_val_u32(gguf, key("attention.head_count_kv").c_str(),        n_head_kv);
++    gguf_set_val_f32(gguf, key("attention.layer_norm_rms_epsilon").c_str(), 1e-6f);
++    gguf_set_val_f32(gguf, key("attention.layer_norm_epsilon").c_str(),     1e-5f);
++    gguf_set_val_f32(gguf, key("rope.freq_base").c_str(),                 10000.0f);
++    const uint32_t taps[] = { 1, 2 };
++    gguf_set_arr_data(gguf, key("tagger.tap_layers").c_str(), GGUF_TYPE_UINT32, taps, 2);
++    if (sliding_window) {
++        // a window shorter than the text: with it the encoder would stop seeing distant tokens
++        gguf_set_val_u32(gguf, key("attention.sliding_window").c_str(), 2);
++    }
++
++    ggml_init_params params = { 64 * 1024 * 1024, nullptr, false };
++    ggml_context * ctx = ggml_init(params);
++    std::mt19937 rng(42);
++    std::normal_distribution<float> dist(0.0f, 0.2f);
++    auto add = [&](const std::string & name, std::vector<int64_t> ne, bool ones = false) {
++        ggml_tensor * t = ne.size() == 1 ? ggml_new_tensor_1d(ctx, GGML_TYPE_F32, ne[0])
++                                         : ggml_new_tensor_2d(ctx, GGML_TYPE_F32, ne[0], ne[1]);
++        ggml_set_name(t, name.c_str());
++        float * data = (float *) t->data;
++        for (int64_t i = 0; i < ggml_nelements(t); ++i) {
++            data[i] = ones ? 1.0f : dist(rng);
++        }
++        gguf_add_tensor(gguf, t);
++    };
++
++    add("token_embd.weight",  {n_embd, n_vocab});
++    add("output_norm.weight", {n_embd}, true);
++    for (int il = 0; il < n_layer; ++il) {
++        const std::string p = "blk." + std::to_string(il) + ".";
++        add(p + "attn_norm.weight",   {n_embd}, true);
++        add(p + "attn_q.weight",      {n_embd, n_head * n_head_dim});
++        add(p + "attn_k.weight",      {n_embd, n_head_kv * n_head_dim});
++        add(p + "attn_v.weight",      {n_embd, n_head_kv * n_head_dim});
++        add(p + "attn_output.weight", {n_head * n_head_dim, n_embd});
++        add(p + "attn_q_norm.weight", {n_head_dim}, true);
++        add(p + "attn_k_norm.weight", {n_head_dim}, true);
++        add(p + "ffn_norm.weight",    {n_embd}, true);
++        add(p + "ffn_gate.weight",    {n_embd, n_ff});
++        add(p + "ffn_down.weight",    {n_ff, n_embd});
++        add(p + "ffn_up.weight",      {n_embd, n_ff});
++    }
++    add("tagger.fc1.weight", {n_embd * 2, n_hidden});
++    add("tagger.fc1.bias",   {n_hidden});
++    add("tagger.fc2.weight", {n_hidden, n_tags});
++    add("tagger.fc2.bias",   {n_tags});
++
++    CHECK(gguf_write_to_file(gguf, path.c_str(), false));
++    gguf_free(gguf);
++    ggml_free(ctx);
++}
++
++// tag logits of every token of a fixed text
++static std::vector<float> run(const std::string & path, int32_t & n_swa) {
++    llama_model * model = llama_model_load_from_file(path.c_str(), llama_model_default_params());
++    CHECK(model != nullptr);
++    n_swa = llama_model_n_swa(model);
++    CHECK(llama_model_n_embd_out(model) == n_tags);
++
++    auto cparams = llama_context_default_params();
++    cparams.n_ctx        = 64;
++    cparams.n_batch      = 16;
++    cparams.n_ubatch     = 16;
++    cparams.embeddings   = true;
++    cparams.pooling_type = LLAMA_POOLING_TYPE_NONE;
++    llama_context * ctx = llama_init_from_model(model, cparams);
++    CHECK(ctx != nullptr);
++
++    const int n_tokens = 12;
++    llama_batch batch = llama_batch_init(n_tokens, 0, 1);
++    for (int i = 0; i < n_tokens; ++i) {
++        batch.token[i] = (7 * i + 3) % n_vocab; batch.pos[i] = i; batch.n_seq_id[i] = 1; batch.seq_id[i][0] = 0; batch.logits[i] = true;
++    }
++    batch.n_tokens = n_tokens;
++    CHECK(llama_decode(ctx, batch) == 0);
++
++    std::vector<float> out;
++    for (int i = 0; i < n_tokens; ++i) {
++        const float * e = llama_get_embeddings_ith(ctx, i);
++        CHECK(e != nullptr);
++        for (int j = 0; j < n_tags; ++j) {
++            CHECK(std::isfinite(e[j]));
++            out.push_back(e[j]);
++        }
++    }
++    llama_batch_free(batch);
++    llama_free(ctx);
++    llama_model_free(model);
++    return out;
++}
++
++int main() {
++    try {
++        llama_log_set([](ggml_log_level, const char *, void *) {}, nullptr);
++        llama_backend_init();
++
++        const std::string plain = "test-span-tagger-plain.gguf", windowed = "test-span-tagger-window.gguf";
++        write_model(plain,    false);
++        write_model(windowed, true);
++
++        int32_t n_swa_plain = -1, n_swa_windowed = -1;
++        const auto tags_plain    = run(plain,    n_swa_plain);
++        const auto tags_windowed = run(windowed, n_swa_windowed);
++        std::remove(plain.c_str());
++        std::remove(windowed.c_str());
++
++        CHECK(n_swa_plain == 0);
++        CHECK(n_swa_windowed == 0);
++        CHECK(tags_plain.size() == tags_windowed.size());
++        CHECK(std::memcmp(tags_plain.data(), tags_windowed.data(), tags_plain.size() * sizeof(float)) == 0);
++
++        llama_backend_free();
++        std::printf("PASS: the sliding window key does not make span-tagger iSWA (%zu tag logits equal)\n", tags_plain.size());
++        return 0;
++    } catch (const std::exception & e) {
++        std::fprintf(stderr, "%s\n", e.what());
++        return 1;
++    }
++}

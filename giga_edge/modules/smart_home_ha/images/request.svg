@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="430" viewBox="0 0 760 430" role="img" aria-labelledby="title">
+  <title id="title">One request step by step: Home Assistant reports a light, the model sees it as a line of the scene and calls set_device_parameter, the adapter reads the light again and then calls the Home Assistant tool, and the model gets the result</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:10.5px}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .ha{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .model{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .adapter{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .orange{fill:#bc4c00}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="429" rx="12"/>
+
+  <text class="b" x="24" y="52" style="font-size:12px">Home Assistant</text>
+  <text class="note small" x="24" y="68">reports a light</text>
+  <rect class="ha" x="150" y="30" width="586" height="46" rx="8"/>
+  <text class="mono" x="164" y="58">domain: light · names: Свет на кухне · areas: Кухня · state: 'on'</text>
+  <path class="edge" d="M443 76V92"/>
+
+  <text class="b" x="24" y="116" style="font-size:12px">The model sees</text>
+  <text class="note small" x="24" y="132">a line of the scene</text>
+  <rect class="model" x="150" y="94" width="586" height="46" rx="8"/>
+  <text class="mono" x="164" y="114">&lt;d_light&gt;0 Свет на кухне [Кухня]</text>
+  <text class="mono" x="164" y="130">&lt;p_rw_light_brightness&gt;&lt;p_rw_light_colour_temp&gt;&lt;p_rw_on_off&gt;</text>
+  <path class="edge" d="M443 140V156"/>
+
+  <text class="b" x="24" y="180" style="font-size:12px">The model calls</text>
+  <text class="note small" x="24" y="196">«яркость на 50»</text>
+  <rect class="model" x="150" y="158" width="586" height="46" rx="8"/>
+  <text class="mono" x="164" y="186">set_device_parameter(light_0, light_brightness, 50)</text>
+  <path class="edge" d="M443 204V220"/>
+
+  <text class="b" x="24" y="244" style="font-size:12px">The adapter reads</text>
+  <text class="note small" x="24" y="260">a fresh state</text>
+  <rect class="adapter" x="150" y="222" width="586" height="46" rx="8"/>
+  <text class="mono" x="164" y="242">homeassistant__GetLiveContext {name: Свет на кухне, area: Кухня, domain: light}</text>
+  <text class="note small orange" x="164" y="259">it must return exactly this one light, otherwise DEVICE_UNREACHABLE</text>
+  <path class="edge" d="M443 268V284"/>
+
+  <text class="b" x="24" y="308" style="font-size:12px">The adapter writes</text>
+  <text class="note small" x="24" y="324">with the tool of HA</text>
+  <rect class="adapter" x="150" y="286" width="586" height="46" rx="8"/>
+  <text class="mono" x="164" y="306">light__HassLightSet {name: Свет на кухне, area: Кухня, domain: [light], brightness: 50}</text>
+  <text class="note small orange" x="164" y="323">HA must confirm this light alone, with nothing failed, otherwise DEVICE_UNREACHABLE</text>
+  <path class="edge" d="M443 332V348"/>
+
+  <text class="b" x="24" y="372" style="font-size:12px">The model gets</text>
+  <text class="note small" x="24" y="388">the result</text>
+  <rect class="model" x="150" y="350" width="586" height="46" rx="8"/>
+  <text class="mono" x="164" y="378">success, or an error code</text>
+
+  <text class="note" x="150" y="416">get_device_parameter stops after the read: the value read is the result.</text>
+</svg>

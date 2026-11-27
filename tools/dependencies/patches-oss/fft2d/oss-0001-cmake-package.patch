@@ -1,0 +1,102 @@
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Subject: [PATCH] fft2d: CMake package for the TensorFlow Lite build
+
+Adds a CMake build that installs fft2d as a package for find_package.
+---
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..9e92ab484e419b0482eee8bfa4056e5a77f8b453
+--- /dev/null
++++ b/CMakeLists.txt
+@@ -0,0 +1,82 @@
++cmake_minimum_required(VERSION 3.16)
++
++project(fft2d C)
++
++include(GNUInstallDirs)
++
++# A developer should link this library if they haven't provided their own
++# implementation of these allocation methods.
++add_library(fft2d_alloc
++  "alloc.c"
++  "alloc.h"
++)
++target_include_directories(fft2d_alloc PUBLIC .)
++
++# Requires implementation of fft2d_alloc.
++add_library(fft2d_fft4f2d "fft4f2d.c")
++target_include_directories(fft2d_fft4f2d PRIVATE ".")
++
++add_library(fft2d_fftsg "fftsg.c")
++if(NOT CMAKE_SYSTEM_NAME STREQUAL Windows)
++target_link_libraries(fft2d_fftsg m)
++endif()
++
++install(
++  TARGETS fft2d_fftsg
++  EXPORT fft2dTargets
++  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
++  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
++  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
++)
++
++# Requires implementation of fft2d_alloc.
++add_library(fft2d_fftsg2d "fftsg2d.c")
++target_link_libraries(fft2d_fftsg2d fft2d_fftsg)
++target_include_directories(fft2d_fftsg2d PRIVATE .)
++
++# Requires implementation of fft2d_alloc.
++add_library(fft2d_fftsg3d "fftsg3d.c")
++target_link_libraries(fft2d_fftsg3d fft2d_fftsg)
++target_include_directories(fft2d_fftsg3d PRIVATE .)
++
++add_library(fft2d_shrtdct "shrtdct.c")
++
++add_library(fft2d ALIAS fft2d_fftsg2d)
++
++install(
++  TARGETS fft2d_fftsg2d
++  EXPORT fft2dTargets
++  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
++  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
++  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
++)
++
++install(EXPORT fft2dTargets
++  FILE fft2dTargets.cmake
++  DESTINATION lib/cmake/fft2d
++)
++
++include(CMakePackageConfigHelpers)
++
++configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
++  "${CMAKE_CURRENT_BINARY_DIR}/fft2dConfig.cmake"
++  INSTALL_DESTINATION "lib/cmake/fft2d"
++  NO_SET_AND_CHECK_MACRO
++  NO_CHECK_REQUIRED_COMPONENTS_MACRO
++)
++
++write_basic_package_version_file(
++  "${CMAKE_CURRENT_BINARY_DIR}/fft2dConfigVersion.cmake"
++  VERSION "0"
++  COMPATIBILITY AnyNewerVersion
++)
++
++install(FILES
++  ${CMAKE_CURRENT_BINARY_DIR}/fft2dConfig.cmake
++  ${CMAKE_CURRENT_BINARY_DIR}/fft2dConfigVersion.cmake
++  DESTINATION lib/cmake/fft2d
++)
++
++export(EXPORT fft2dTargets
++  FILE "${CMAKE_CURRENT_BINARY_DIR}/fft2dTargets.cmake"
++)
+diff --git a/Config.cmake.in b/Config.cmake.in
+new file mode 100644
+index 0000000000000000000000000000000000000000..9318480a0ab974d49682ffee46f12d48ad4ae7e4
+--- /dev/null
++++ b/Config.cmake.in
+@@ -0,0 +1,3 @@
++@PACKAGE_INIT@
++
++include("${CMAKE_CURRENT_LIST_DIR}/fft2dTargets.cmake")

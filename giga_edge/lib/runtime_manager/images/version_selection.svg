@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="316" viewBox="0 0 760 316" role="img" aria-labelledby="title">
+  <title id="title">Version selection: the default version, the version of a feature rule, and the default kept while the required part is missing</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .tiny{font-size:10px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .panel{fill:#fff;stroke:#d0d7de}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .slot{fill:#fff;stroke:#0969da;stroke-width:1.5;stroke-dasharray:5 4}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .off{fill:#f6f8fa;stroke:#afb8c1}
+    .feat{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .warn{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .purple{fill:#8250df}
+    .orange{fill:#bc4c00}
+    .green{fill:#1a7f37}
+    .muted{fill:#8c959f}
+    .white{fill:#fff}
+    .tagon{fill:#0969da}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .back{fill:none;stroke:#59636e;stroke-width:1.5;stroke-dasharray:6 4;marker-end:url(#a)}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+    .life{stroke:#afb8c1;stroke-dasharray:4 4}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="315" rx="12"/>
+
+  <rect class="chip" x="25" y="22" width="710" height="52" rx="8"/>
+  <text class="mono small" x="40" y="43">default_submodels: { asr: asr_small }</text>
+  <text class="mono small" x="40" y="62">features: [ { feature_ids: [hq], submodel_id: asr, submodel_version: asr_large } ]</text>
+
+  <text class="mono b mid" x="138" y="100" style="font-size:12px">features: { }</text>
+  <rect class="panel" x="25" y="110" width="226" height="186" rx="8"/>
+  <rect class="slot" x="73" y="142" width="130" height="62" rx="8"/>
+  <text x="85" y="162"><tspan class="mono b">asr</tspan><tspan class="note small" dx="6">submodel</tspan></text>
+  <rect class="node" x="85" y="170" width="76" height="22" rx="11"/>
+  <text class="mono small mid" x="123" y="185">asr_small</text>
+  <text class="note mid" x="138" y="236">no rule matches:</text>
+  <text class="note mid" x="138" y="253">the default version</text>
+
+  <text class="mono b mid" x="380" y="100" style="font-size:12px">features: { hq }</text>
+  <rect class="panel" x="267" y="110" width="226" height="186" rx="8"/>
+  <text class="note small mid" x="380" y="130">the part with asr_large is present</text>
+  <rect class="slot" x="315" y="142" width="130" height="62" rx="8"/>
+  <text x="327" y="162"><tspan class="mono b">asr</tspan><tspan class="note small" dx="6">submodel</tspan></text>
+  <rect class="node" x="327" y="170" width="76" height="22" rx="11"/>
+  <text class="mono small mid" x="365" y="185">asr_large</text>
+  <text class="note mid" x="380" y="236">the first rule whose</text>
+  <text class="note mid" x="380" y="253">features are all enabled</text>
+
+  <text class="mono b mid" x="622" y="100" style="font-size:12px">features: { hq }</text>
+  <rect class="panel" x="509" y="110" width="226" height="186" rx="8"/>
+  <text class="note small mid" x="622" y="130">the part with asr_large is missing</text>
+  <rect class="slot" x="557" y="142" width="130" height="62" rx="8"/>
+  <text x="569" y="162"><tspan class="mono b">asr</tspan><tspan class="note small" dx="6">submodel</tspan></text>
+  <rect class="node" x="569" y="170" width="76" height="22" rx="11"/>
+  <text class="mono small mid" x="607" y="185">asr_small</text>
+  <text class="note small mid" x="622" y="224">the default stays, the manager asks:</text>
+  <rect class="warn" x="523" y="232" width="198" height="50" rx="8"/>
+  <text class="mono tiny orange" x="535" y="252">required_versions: asr_large</text>
+  <text class="mono tiny orange" x="535" y="269">inactive_versions: asr_large</text>
+
+</svg>

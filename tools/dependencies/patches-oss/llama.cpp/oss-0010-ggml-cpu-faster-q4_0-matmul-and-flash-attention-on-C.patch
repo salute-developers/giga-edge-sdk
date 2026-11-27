@@ -1,0 +1,1485 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 10/12] ggml-cpu: faster q4_0 matmul and flash attention on
+ Cortex-A55
+
+An 8-row q4_0 4x4 panel kernel scheduled for the in-order A55, a q4_0 x q8_0
+dot product of one x row with 2-4 y rows, and flash attention paths that walk
+the KV cells once per group of heads. The new paths are compiled for aarch64
+without SVE only, and the results are bitwise identical to the previous
+kernels.
+---
+ ggml/src/ggml-cpu/arch/arm/repack.cpp | 535 ++++++++++++++++++++++-
+ ggml/src/ggml-cpu/ggml-cpu.c          | 101 +++++
+ ggml/src/ggml-cpu/ops.cpp             | 593 +++++++++++++++++++++++++-
+ ggml/src/ggml-cpu/repack.cpp          |  60 ++-
+ ggml/src/ggml-cpu/repack.h            |   4 +
+ ggml/src/ggml-cpu/simd-gemm.h         |   2 +-
+ 6 files changed, 1286 insertions(+), 9 deletions(-)
+
+diff --git a/ggml/src/ggml-cpu/arch/arm/repack.cpp b/ggml/src/ggml-cpu/arch/arm/repack.cpp
+index ad0e5ccaf7b7ed185c69dfb7731de2ee22c1f785..42a5440f990b3d0a7d41e2a83ee28f31cd6145b1 100644
+--- a/ggml/src/ggml-cpu/arch/arm/repack.cpp
++++ b/ggml/src/ggml-cpu/arch/arm/repack.cpp
+@@ -13,6 +13,7 @@
+ #include <cstring>
+ #include <cassert>
+ #include <cstdlib> // for qsort
++#include <cstddef>
+ #include <cstdio>  // for GGML_ASSERT
+ 
+ #define GGML_CPU_CLANG_WORKAROUND
+@@ -248,8 +249,62 @@ void ggml_gemv_q4_0_4x4_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const vo
+ 
+ #if ! ((defined(_MSC_VER)) && ! defined(__clang__)) && defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+     const block_q4_0x4 * b_ptr = (const block_q4_0x4 *) vx;
++    int c = 0;
+ 
+-    for (int c = 0; c < nc; c += ncols_interleaved) {
++    // two groups of four columns per pass and two sdot chains per group: on the in-order A55 a chain of 8 dependent sdot
++    // stalled. Integer sums are exact in any order, the per-block arithmetic is the same, so the result is bitwise unchanged
++    for (; c + 2*ncols_interleaved <= nc; c += 2*ncols_interleaved) {
++        const block_q4_0x4 * b2_ptr = b_ptr + nb;
++        const block_q8_0 * a_ptr = (const block_q8_0 *) vy;
++        float32x4_t acc = vdupq_n_f32(0);
++        float32x4_t acc2 = vdupq_n_f32(0);
++        for (int b = 0; b < nb; b++) {
++            int8x16_t a0 = vld1q_s8(a_ptr->qs);
++            int8x16_t a1 = vld1q_s8(a_ptr->qs + qk/2);
++            float32x4_t ad = vcvt_f32_f16(vld1_dup_f16((const __fp16 *) &a_ptr->d));
++
++            int8x16_t b0 = vld1q_s8((const int8_t *) b_ptr->qs);
++            int8x16_t b1 = vld1q_s8((const int8_t *) b_ptr->qs + 16);
++            int8x16_t b2 = vld1q_s8((const int8_t *) b_ptr->qs + 32);
++            int8x16_t b3 = vld1q_s8((const int8_t *) b_ptr->qs + 48);
++            int8x16_t c0 = vld1q_s8((const int8_t *) b2_ptr->qs);
++            int8x16_t c1 = vld1q_s8((const int8_t *) b2_ptr->qs + 16);
++            int8x16_t c2 = vld1q_s8((const int8_t *) b2_ptr->qs + 32);
++            int8x16_t c3 = vld1q_s8((const int8_t *) b2_ptr->qs + 48);
++            float32x4_t bd = vcvt_f32_f16(vld1_f16((const __fp16 *) b_ptr->d));
++            float32x4_t cd = vcvt_f32_f16(vld1_f16((const __fp16 *) b2_ptr->d));
++
++            int32x4_t rl = vdupq_n_s32(0), rh = vdupq_n_s32(0), ql = vdupq_n_s32(0), qh = vdupq_n_s32(0);
++            rl = vdotq_laneq_s32(rl, b0 << 4, a0, 0);
++            rh = vdotq_laneq_s32(rh, b0 & 0xf0U, a1, 0);
++            ql = vdotq_laneq_s32(ql, c0 << 4, a0, 0);
++            qh = vdotq_laneq_s32(qh, c0 & 0xf0U, a1, 0);
++            rl = vdotq_laneq_s32(rl, b1 << 4, a0, 1);
++            rh = vdotq_laneq_s32(rh, b1 & 0xf0U, a1, 1);
++            ql = vdotq_laneq_s32(ql, c1 << 4, a0, 1);
++            qh = vdotq_laneq_s32(qh, c1 & 0xf0U, a1, 1);
++            rl = vdotq_laneq_s32(rl, b2 << 4, a0, 2);
++            rh = vdotq_laneq_s32(rh, b2 & 0xf0U, a1, 2);
++            ql = vdotq_laneq_s32(ql, c2 << 4, a0, 2);
++            qh = vdotq_laneq_s32(qh, c2 & 0xf0U, a1, 2);
++            rl = vdotq_laneq_s32(rl, b3 << 4, a0, 3);
++            rh = vdotq_laneq_s32(rh, b3 & 0xf0U, a1, 3);
++            ql = vdotq_laneq_s32(ql, c3 << 4, a0, 3);
++            qh = vdotq_laneq_s32(qh, c3 & 0xf0U, a1, 3);
++
++            acc  = vfmaq_f32(acc,  vcvtq_n_f32_s32(vaddq_s32(rl, rh), 4), vmulq_f32(ad, bd));
++            acc2 = vfmaq_f32(acc2, vcvtq_n_f32_s32(vaddq_s32(ql, qh), 4), vmulq_f32(ad, cd));
++            a_ptr++;
++            b_ptr++;
++            b2_ptr++;
++        }
++        vst1q_f32(s, acc);
++        vst1q_f32(s + ncols_interleaved, acc2);
++        s += 2*ncols_interleaved;
++        b_ptr = b2_ptr;
++    }
++
++    for (; c < nc; c += ncols_interleaved) {
+         const block_q8_0 * a_ptr = (const block_q8_0 *) vy;
+         float32x4_t acc = vdupq_n_f32(0);
+         for (int b = 0; b < nb; b++) {
+@@ -1967,6 +2022,482 @@ void ggml_gemv_q1_0_4x8_q8_0(int                        n,
+     ggml_gemv_q1_0_4x8_q8_0_generic(n, s, bs, vx, vy, nr, nc);
+ }
+ 
++#if ! ((defined(_MSC_VER)) && ! defined(__clang__)) && defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
++// arguments of the ggml_gemm_q4_0_4x4_q8_0_p8 kernel (the field offsets are hardcoded in the asm)
++struct q4_0_p8_args { const void * b; const void * a; float * res; float * dummy; int64_t pad; size_t a_stride, res_stride, b_skip; int64_t nb, nc, nvalid, acc; };
++static_assert(offsetof(q4_0_p8_args, a_stride) == 0x28 && offsetof(q4_0_p8_args, acc) == 0x58, "q4_0_p8_args");
++
++// derived from the block loop of ggml_gemm_q4_0_4x4_q8_0
++static void gemm_q4_0_4x4_p8_a55(const q4_0_p8_args * args) {
++    register const q4_0_p8_args * p asm("x0") = args;
++    __asm__ __volatile__(
++        "ldr x9, [x0, #0x28]\n"
++        "ldr x2, [x0, #0x30]\n"
++        "ldr x5, [x0, #0x38]\n"
++        "ldr x7, [x0, #0x40]\n"
++        "ldr x27, [x0, #0x48]\n"
++        "ldr x3, [x0, #0x50]\n"
++        "ldr x6, [x0, #0x58]\n"
++        "ldr x4, [x0, #0x18]\n"
++        "ldr x1, [x0, #0x8]\n"
++        "ldr x26, [x0, #0x10]\n"
++        "ldr x19, [x0, #0x0]\n"
++        "sub x7, x7, #1\n"
++        "2:"
++        "cbz x6, 10f\n"
++        "mov x20, x26\n"
++        "cmp x3, #0\n"
++        "csel x8, x20, x4, gt\n"
++        "ldr q16, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #1\n"
++        "csel x8, x20, x4, gt\n"
++        "ldr q17, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #2\n"
++        "csel x8, x20, x4, gt\n"
++        "ldr q18, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #3\n"
++        "csel x8, x20, x4, gt\n"
++        "ldr q19, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #4\n"
++        "csel x8, x20, x4, gt\n"
++        "ldr q20, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #5\n"
++        "csel x8, x20, x4, gt\n"
++        "ldr q21, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #6\n"
++        "csel x8, x20, x4, gt\n"
++        "ldr q22, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #7\n"
++        "csel x8, x20, x4, gt\n"
++        "ldr q23, [x8]\n"
++        "b 11f\n"
++        "10:"
++        "movi v16.4s, #0x0\n"
++        "movi v17.4s, #0x0\n"
++        "movi v18.4s, #0x0\n"
++        "movi v19.4s, #0x0\n"
++        "movi v20.4s, #0x0\n"
++        "movi v21.4s, #0x0\n"
++        "movi v22.4s, #0x0\n"
++        "movi v23.4s, #0x0\n"
++        "11:"
++        "movi v8.4s, #0x0\n"
++        "movi v9.4s, #0x0\n"
++        "movi v10.4s, #0x0\n"
++        "movi v11.4s, #0x0\n"
++        "movi v12.4s, #0x0\n"
++        "movi v13.4s, #0x0\n"
++        "movi v14.4s, #0x0\n"
++        "movi v15.4s, #0x0\n"
++        "mov x20, x1\n"
++        "add x21, x1, x9\n"
++        "mov x22, x7\n"
++        "ldr q0, [x19, #8]\n"
++        "ldr q1, [x19, #24]\n"
++        "ldr q2, [x19, #40]\n"
++        "ldr q3, [x19, #56]\n"
++        "ldr q24, [x20, #8]\n"
++        "ldr q25, [x20, #24]\n"
++        "movi v31.16b, #0xf0\n"
++        "and v4.16b, v0.16b, v31.16b\n"
++        "and v5.16b, v1.16b, v31.16b\n"
++        "and v6.16b, v2.16b, v31.16b\n"
++        "and v7.16b, v3.16b, v31.16b\n"
++        "shl v0.16b, v0.16b, #4\n"
++        "shl v1.16b, v1.16b, #4\n"
++        "shl v2.16b, v2.16b, #4\n"
++        "shl v3.16b, v3.16b, #4\n"
++        ".inst 0x4f98e008\n"  // sdot v8.4s, v0.16b, v24.4b[0]
++        "ldr d26, [x20, #40]\n"
++        "ldr x14, [x20, #48]\n"
++        ".inst 0x4fb8e009\n"  // sdot v9.4s, v0.16b, v24.4b[1]
++        ".inst 0x4f98e80a\n"  // sdot v10.4s, v0.16b, v24.4b[2]
++        ".inst 0x4fb8e80b\n"  // sdot v11.4s, v0.16b, v24.4b[3]
++        ".inst 0x4f99e028\n"  // sdot v8.4s, v1.16b, v25.4b[0]
++        "ldr d27, [x20, #56]\n"
++        "ldr x15, [x20, #64]\n"
++        "ins v26.d[1], x14\n"
++        ".inst 0x4fb9e029\n"  // sdot v9.4s, v1.16b, v25.4b[1]
++        ".inst 0x4f99e82a\n"  // sdot v10.4s, v1.16b, v25.4b[2]
++        ".inst 0x4fb9e82b\n"  // sdot v11.4s, v1.16b, v25.4b[3]
++        ".inst 0x4f9ae048\n"  // sdot v8.4s, v2.16b, v26.4b[0]
++        "ldr d24, [x20, #72]\n"
++        "ldr x14, [x20, #80]\n"
++        "ins v27.d[1], x15\n"
++        ".inst 0x4fbae049\n"  // sdot v9.4s, v2.16b, v26.4b[1]
++        ".inst 0x4f9ae84a\n"  // sdot v10.4s, v2.16b, v26.4b[2]
++        ".inst 0x4fbae84b\n"  // sdot v11.4s, v2.16b, v26.4b[3]
++        ".inst 0x4f9be068\n"  // sdot v8.4s, v3.16b, v27.4b[0]
++        "ldr d25, [x20, #88]\n"
++        "ldr x15, [x20, #96]\n"
++        "ins v24.d[1], x14\n"
++        ".inst 0x4fbbe069\n"  // sdot v9.4s, v3.16b, v27.4b[1]
++        ".inst 0x4f9be86a\n"  // sdot v10.4s, v3.16b, v27.4b[2]
++        ".inst 0x4fbbe86b\n"  // sdot v11.4s, v3.16b, v27.4b[3]
++        ".inst 0x4f98e088\n"  // sdot v8.4s, v4.16b, v24.4b[0]
++        "ldr d26, [x20, #104]\n"
++        "ldr x14, [x20, #112]\n"
++        "ins v25.d[1], x15\n"
++        ".inst 0x4fb8e089\n"  // sdot v9.4s, v4.16b, v24.4b[1]
++        ".inst 0x4f98e88a\n"  // sdot v10.4s, v4.16b, v24.4b[2]
++        ".inst 0x4fb8e88b\n"  // sdot v11.4s, v4.16b, v24.4b[3]
++        ".inst 0x4f99e0a8\n"  // sdot v8.4s, v5.16b, v25.4b[0]
++        "ldr d27, [x20, #120]\n"
++        "ldr x15, [x20, #128]\n"
++        "ins v26.d[1], x14\n"
++        ".inst 0x4fb9e0a9\n"  // sdot v9.4s, v5.16b, v25.4b[1]
++        "ldr d30, [x20]\n"
++        "ldr d28, [x19]\n"
++        ".inst 0x4f99e8aa\n"  // sdot v10.4s, v5.16b, v25.4b[2]
++        ".inst 0x4fb9e8ab\n"  // sdot v11.4s, v5.16b, v25.4b[3]
++        ".inst 0x4f9ae0c8\n"  // sdot v8.4s, v6.16b, v26.4b[0]
++        "ldr d24, [x21, #8]\n"
++        "ldr x14, [x21, #16]\n"
++        "ins v27.d[1], x15\n"
++        ".inst 0x4fbae0c9\n"  // sdot v9.4s, v6.16b, v26.4b[1]
++        "fcvtl v30.4s, v30.4h\n"
++        ".inst 0x4f9ae8ca\n"  // sdot v10.4s, v6.16b, v26.4b[2]
++        "fcvtl v28.4s, v28.4h\n"
++        ".inst 0x4fbae8cb\n"  // sdot v11.4s, v6.16b, v26.4b[3]
++        ".inst 0x4f9be0e8\n"  // sdot v8.4s, v7.16b, v27.4b[0]
++        "ldr d25, [x21, #24]\n"
++        "ldr x15, [x21, #32]\n"
++        "ins v24.d[1], x14\n"
++        ".inst 0x4fbbe0e9\n"  // sdot v9.4s, v7.16b, v27.4b[1]
++        ".inst 0x4f9be8ea\n"  // sdot v10.4s, v7.16b, v27.4b[2]
++        ".inst 0x4fbbe8eb\n"  // sdot v11.4s, v7.16b, v27.4b[3]
++        "cbz x22, 5f\n"
++        "4:"
++        ".inst 0x4f98e00c\n"  // sdot v12.4s, v0.16b, v24.4b[0]
++        "ldr d26, [x21, #40]\n"
++        "ldr x14, [x21, #48]\n"
++        "ins v25.d[1], x15\n"
++        ".inst 0x4fb8e00d\n"  // sdot v13.4s, v0.16b, v24.4b[1]
++        "scvtf v8.4s, v8.4s, #0x4\n"
++        ".inst 0x4f98e80e\n"  // sdot v14.4s, v0.16b, v24.4b[2]
++        "scvtf v9.4s, v9.4s, #0x4\n"
++        ".inst 0x4fb8e80f\n"  // sdot v15.4s, v0.16b, v24.4b[3]
++        "fmul v29.4s, v28.4s, v30.s[0]\n"
++        ".inst 0x4f99e02c\n"  // sdot v12.4s, v1.16b, v25.4b[0]
++        "ldr d27, [x21, #56]\n"
++        "ldr x15, [x21, #64]\n"
++        "ins v26.d[1], x14\n"
++        "scvtf v10.4s, v10.4s, #0x4\n"
++        ".inst 0x4fb9e02d\n"  // sdot v13.4s, v1.16b, v25.4b[1]
++        "ldr d0, [x19, #80]\n"
++        "ldr x10, [x19, #88]\n"
++        "scvtf v11.4s, v11.4s, #0x4\n"
++        ".inst 0x4f99e82e\n"  // sdot v14.4s, v1.16b, v25.4b[2]
++        "fmla v16.4s, v8.4s, v29.4s\n"
++        ".inst 0x4fb9e82f\n"  // sdot v15.4s, v1.16b, v25.4b[3]
++        "fmul v31.4s, v28.4s, v30.s[1]\n"
++        ".inst 0x4f9ae04c\n"  // sdot v12.4s, v2.16b, v26.4b[0]
++        "ldr d24, [x21, #72]\n"
++        "ldr x14, [x21, #80]\n"
++        "ins v27.d[1], x15\n"
++        "movi v8.4s, #0x0\n"
++        ".inst 0x4fbae04d\n"  // sdot v13.4s, v2.16b, v26.4b[1]
++        "ldr d1, [x19, #96]\n"
++        "ldr x11, [x19, #104]\n"
++        "fmla v17.4s, v9.4s, v31.4s\n"
++        ".inst 0x4f9ae84e\n"  // sdot v14.4s, v2.16b, v26.4b[2]
++        "fmul v29.4s, v28.4s, v30.s[2]\n"
++        ".inst 0x4fbae84f\n"  // sdot v15.4s, v2.16b, v26.4b[3]
++        "ins v0.d[1], x10\n"
++        ".inst 0x4f9be06c\n"  // sdot v12.4s, v3.16b, v27.4b[0]
++        "ldr d25, [x21, #88]\n"
++        "ldr x15, [x21, #96]\n"
++        "ins v24.d[1], x14\n"
++        "movi v9.4s, #0x0\n"
++        ".inst 0x4fbbe06d\n"  // sdot v13.4s, v3.16b, v27.4b[1]
++        "ldr d2, [x19, #112]\n"
++        "ldr x12, [x19, #120]\n"
++        "fmla v18.4s, v10.4s, v29.4s\n"
++        ".inst 0x4f9be86e\n"  // sdot v14.4s, v3.16b, v27.4b[2]
++        "fmul v31.4s, v28.4s, v30.s[3]\n"
++        ".inst 0x4fbbe86f\n"  // sdot v15.4s, v3.16b, v27.4b[3]
++        "ins v1.d[1], x11\n"
++        ".inst 0x4f98e08c\n"  // sdot v12.4s, v4.16b, v24.4b[0]
++        "ldr d26, [x21, #104]\n"
++        "ldr x14, [x21, #112]\n"
++        "ins v25.d[1], x15\n"
++        ".inst 0x4fb8e08d\n"  // sdot v13.4s, v4.16b, v24.4b[1]
++        "ldr d3, [x19, #128]\n"
++        "ldr x13, [x19, #136]\n"
++        "movi v10.4s, #0x0\n"
++        ".inst 0x4f98e88e\n"  // sdot v14.4s, v4.16b, v24.4b[2]
++        "fmla v19.4s, v11.4s, v31.4s\n"
++        ".inst 0x4fb8e88f\n"  // sdot v15.4s, v4.16b, v24.4b[3]
++        "ins v2.d[1], x12\n"
++        ".inst 0x4f99e0ac\n"  // sdot v12.4s, v5.16b, v25.4b[0]
++        "ldr d27, [x21, #120]\n"
++        "ldr x15, [x21, #128]\n"
++        "ins v26.d[1], x14\n"
++        "movi v11.4s, #0x0\n"
++        ".inst 0x4fb9e0ad\n"  // sdot v13.4s, v5.16b, v25.4b[1]
++        "ldr d30, [x21]\n"
++        "ins v3.d[1], x13\n"
++        ".inst 0x4f99e8ae\n"  // sdot v14.4s, v5.16b, v25.4b[2]
++        "movi v31.16b, #0xf0\n"
++        ".inst 0x4fb9e8af\n"  // sdot v15.4s, v5.16b, v25.4b[3]
++        "and v4.16b, v0.16b, v31.16b\n"
++        ".inst 0x4f9ae0cc\n"  // sdot v12.4s, v6.16b, v26.4b[0]
++        "ldr d24, [x20, #144]\n"
++        "ldr x14, [x20, #152]\n"
++        "ins v27.d[1], x15\n"
++        ".inst 0x4fbae0cd\n"  // sdot v13.4s, v6.16b, v26.4b[1]
++        "fcvtl v30.4s, v30.4h\n"
++        ".inst 0x4f9ae8ce\n"  // sdot v14.4s, v6.16b, v26.4b[2]
++        "and v5.16b, v1.16b, v31.16b\n"
++        ".inst 0x4fbae8cf\n"  // sdot v15.4s, v6.16b, v26.4b[3]
++        "shl v0.16b, v0.16b, #4\n"
++        ".inst 0x4f9be0ec\n"  // sdot v12.4s, v7.16b, v27.4b[0]
++        "ldr d25, [x20, #160]\n"
++        "ldr x15, [x20, #168]\n"
++        "ins v24.d[1], x14\n"
++        ".inst 0x4fbbe0ed\n"  // sdot v13.4s, v7.16b, v27.4b[1]
++        "and v6.16b, v2.16b, v31.16b\n"
++        ".inst 0x4f9be8ee\n"  // sdot v14.4s, v7.16b, v27.4b[2]
++        "shl v1.16b, v1.16b, #4\n"
++        ".inst 0x4fbbe8ef\n"  // sdot v15.4s, v7.16b, v27.4b[3]
++        "and v7.16b, v3.16b, v31.16b\n"
++        "add x19, x19, #72\n"
++        "add x20, x20, #136\n"
++        "add x21, x21, #136\n"
++        ".inst 0x4f98e008\n"  // sdot v8.4s, v0.16b, v24.4b[0]
++        "ldr d26, [x20, #40]\n"
++        "ldr x14, [x20, #48]\n"
++        "ins v25.d[1], x15\n"
++        "scvtf v12.4s, v12.4s, #0x4\n"
++        ".inst 0x4fb8e009\n"  // sdot v9.4s, v0.16b, v24.4b[1]
++        "scvtf v13.4s, v13.4s, #0x4\n"
++        ".inst 0x4f98e80a\n"  // sdot v10.4s, v0.16b, v24.4b[2]
++        "fmul v29.4s, v28.4s, v30.s[0]\n"
++        ".inst 0x4fb8e80b\n"  // sdot v11.4s, v0.16b, v24.4b[3]
++        "shl v2.16b, v2.16b, #4\n"
++        ".inst 0x4f99e028\n"  // sdot v8.4s, v1.16b, v25.4b[0]
++        "ldr d27, [x20, #56]\n"
++        "ldr x15, [x20, #64]\n"
++        "ins v26.d[1], x14\n"
++        "scvtf v14.4s, v14.4s, #0x4\n"
++        ".inst 0x4fb9e029\n"  // sdot v9.4s, v1.16b, v25.4b[1]
++        "scvtf v15.4s, v15.4s, #0x4\n"
++        "fmla v20.4s, v12.4s, v29.4s\n"
++        ".inst 0x4f99e82a\n"  // sdot v10.4s, v1.16b, v25.4b[2]
++        "fmul v31.4s, v28.4s, v30.s[1]\n"
++        ".inst 0x4fb9e82b\n"  // sdot v11.4s, v1.16b, v25.4b[3]
++        "shl v3.16b, v3.16b, #4\n"
++        ".inst 0x4f9ae048\n"  // sdot v8.4s, v2.16b, v26.4b[0]
++        "ldr d24, [x20, #72]\n"
++        "ldr x14, [x20, #80]\n"
++        "ins v27.d[1], x15\n"
++        ".inst 0x4fbae049\n"  // sdot v9.4s, v2.16b, v26.4b[1]
++        "movi v12.4s, #0x0\n"
++        ".inst 0x4f9ae84a\n"  // sdot v10.4s, v2.16b, v26.4b[2]
++        "fmla v21.4s, v13.4s, v31.4s\n"
++        ".inst 0x4fbae84b\n"  // sdot v11.4s, v2.16b, v26.4b[3]
++        "fmul v29.4s, v28.4s, v30.s[2]\n"
++        ".inst 0x4f9be068\n"  // sdot v8.4s, v3.16b, v27.4b[0]
++        "ldr d25, [x20, #88]\n"
++        "ldr x15, [x20, #96]\n"
++        "ins v24.d[1], x14\n"
++        ".inst 0x4fbbe069\n"  // sdot v9.4s, v3.16b, v27.4b[1]
++        "movi v13.4s, #0x0\n"
++        ".inst 0x4f9be86a\n"  // sdot v10.4s, v3.16b, v27.4b[2]
++        "fmla v22.4s, v14.4s, v29.4s\n"
++        ".inst 0x4fbbe86b\n"  // sdot v11.4s, v3.16b, v27.4b[3]
++        "fmul v31.4s, v28.4s, v30.s[3]\n"
++        ".inst 0x4f98e088\n"  // sdot v8.4s, v4.16b, v24.4b[0]
++        "ldr d26, [x20, #104]\n"
++        "ldr x14, [x20, #112]\n"
++        "ins v25.d[1], x15\n"
++        ".inst 0x4fb8e089\n"  // sdot v9.4s, v4.16b, v24.4b[1]
++        "movi v14.4s, #0x0\n"
++        ".inst 0x4f98e88a\n"  // sdot v10.4s, v4.16b, v24.4b[2]
++        "fmla v23.4s, v15.4s, v31.4s\n"
++        ".inst 0x4fb8e88b\n"  // sdot v11.4s, v4.16b, v24.4b[3]
++        ".inst 0x4f99e0a8\n"  // sdot v8.4s, v5.16b, v25.4b[0]
++        "ldr d27, [x20, #120]\n"
++        "ldr x15, [x20, #128]\n"
++        "ins v26.d[1], x14\n"
++        ".inst 0x4fb9e0a9\n"  // sdot v9.4s, v5.16b, v25.4b[1]
++        "ldr d30, [x20]\n"
++        "ldr d28, [x19]\n"
++        "movi v15.4s, #0x0\n"
++        ".inst 0x4f99e8aa\n"  // sdot v10.4s, v5.16b, v25.4b[2]
++        ".inst 0x4fb9e8ab\n"  // sdot v11.4s, v5.16b, v25.4b[3]
++        ".inst 0x4f9ae0c8\n"  // sdot v8.4s, v6.16b, v26.4b[0]
++        "ldr d24, [x21, #8]\n"
++        "ldr x14, [x21, #16]\n"
++        "ins v27.d[1], x15\n"
++        ".inst 0x4fbae0c9\n"  // sdot v9.4s, v6.16b, v26.4b[1]
++        "fcvtl v30.4s, v30.4h\n"
++        ".inst 0x4f9ae8ca\n"  // sdot v10.4s, v6.16b, v26.4b[2]
++        "fcvtl v28.4s, v28.4h\n"
++        ".inst 0x4fbae8cb\n"  // sdot v11.4s, v6.16b, v26.4b[3]
++        ".inst 0x4f9be0e8\n"  // sdot v8.4s, v7.16b, v27.4b[0]
++        "ldr d25, [x21, #24]\n"
++        "ldr x15, [x21, #32]\n"
++        "ins v24.d[1], x14\n"
++        ".inst 0x4fbbe0e9\n"  // sdot v9.4s, v7.16b, v27.4b[1]
++        ".inst 0x4f9be8ea\n"  // sdot v10.4s, v7.16b, v27.4b[2]
++        ".inst 0x4fbbe8eb\n"  // sdot v11.4s, v7.16b, v27.4b[3]
++        "subs x22, x22, #1\n"
++        "bne 4b\n"
++        "5:"
++        ".inst 0x4f98e00c\n"  // sdot v12.4s, v0.16b, v24.4b[0]
++        "ldr d26, [x21, #40]\n"
++        "ldr x14, [x21, #48]\n"
++        "ins v25.d[1], x15\n"
++        ".inst 0x4fb8e00d\n"  // sdot v13.4s, v0.16b, v24.4b[1]
++        "scvtf v8.4s, v8.4s, #0x4\n"
++        ".inst 0x4f98e80e\n"  // sdot v14.4s, v0.16b, v24.4b[2]
++        "scvtf v9.4s, v9.4s, #0x4\n"
++        ".inst 0x4fb8e80f\n"  // sdot v15.4s, v0.16b, v24.4b[3]
++        "fmul v29.4s, v28.4s, v30.s[0]\n"
++        ".inst 0x4f99e02c\n"  // sdot v12.4s, v1.16b, v25.4b[0]
++        "ldr d27, [x21, #56]\n"
++        "ldr x15, [x21, #64]\n"
++        "ins v26.d[1], x14\n"
++        "scvtf v10.4s, v10.4s, #0x4\n"
++        ".inst 0x4fb9e02d\n"  // sdot v13.4s, v1.16b, v25.4b[1]
++        "scvtf v11.4s, v11.4s, #0x4\n"
++        ".inst 0x4f99e82e\n"  // sdot v14.4s, v1.16b, v25.4b[2]
++        "fmla v16.4s, v8.4s, v29.4s\n"
++        ".inst 0x4fb9e82f\n"  // sdot v15.4s, v1.16b, v25.4b[3]
++        "fmul v31.4s, v28.4s, v30.s[1]\n"
++        ".inst 0x4f9ae04c\n"  // sdot v12.4s, v2.16b, v26.4b[0]
++        "ldr d24, [x21, #72]\n"
++        "ldr x14, [x21, #80]\n"
++        "ins v27.d[1], x15\n"
++        ".inst 0x4fbae04d\n"  // sdot v13.4s, v2.16b, v26.4b[1]
++        "movi v8.4s, #0x0\n"
++        ".inst 0x4f9ae84e\n"  // sdot v14.4s, v2.16b, v26.4b[2]
++        "fmla v17.4s, v9.4s, v31.4s\n"
++        ".inst 0x4fbae84f\n"  // sdot v15.4s, v2.16b, v26.4b[3]
++        "fmul v29.4s, v28.4s, v30.s[2]\n"
++        ".inst 0x4f9be06c\n"  // sdot v12.4s, v3.16b, v27.4b[0]
++        "ldr d25, [x21, #88]\n"
++        "ldr x15, [x21, #96]\n"
++        "ins v24.d[1], x14\n"
++        ".inst 0x4fbbe06d\n"  // sdot v13.4s, v3.16b, v27.4b[1]
++        "movi v9.4s, #0x0\n"
++        ".inst 0x4f9be86e\n"  // sdot v14.4s, v3.16b, v27.4b[2]
++        "fmla v18.4s, v10.4s, v29.4s\n"
++        ".inst 0x4fbbe86f\n"  // sdot v15.4s, v3.16b, v27.4b[3]
++        "fmul v31.4s, v28.4s, v30.s[3]\n"
++        ".inst 0x4f98e08c\n"  // sdot v12.4s, v4.16b, v24.4b[0]
++        "ldr d26, [x21, #104]\n"
++        "ldr x14, [x21, #112]\n"
++        "ins v25.d[1], x15\n"
++        ".inst 0x4fb8e08d\n"  // sdot v13.4s, v4.16b, v24.4b[1]
++        "movi v10.4s, #0x0\n"
++        ".inst 0x4f98e88e\n"  // sdot v14.4s, v4.16b, v24.4b[2]
++        "fmla v19.4s, v11.4s, v31.4s\n"
++        ".inst 0x4fb8e88f\n"  // sdot v15.4s, v4.16b, v24.4b[3]
++        ".inst 0x4f99e0ac\n"  // sdot v12.4s, v5.16b, v25.4b[0]
++        "ldr d27, [x21, #120]\n"
++        "ldr x15, [x21, #128]\n"
++        "ins v26.d[1], x14\n"
++        ".inst 0x4fb9e0ad\n"  // sdot v13.4s, v5.16b, v25.4b[1]
++        "ldr d30, [x21]\n"
++        "movi v11.4s, #0x0\n"
++        ".inst 0x4f99e8ae\n"  // sdot v14.4s, v5.16b, v25.4b[2]
++        ".inst 0x4fb9e8af\n"  // sdot v15.4s, v5.16b, v25.4b[3]
++        ".inst 0x4f9ae0cc\n"  // sdot v12.4s, v6.16b, v26.4b[0]
++        "ins v27.d[1], x15\n"
++        ".inst 0x4fbae0cd\n"  // sdot v13.4s, v6.16b, v26.4b[1]
++        "fcvtl v30.4s, v30.4h\n"
++        ".inst 0x4f9ae8ce\n"  // sdot v14.4s, v6.16b, v26.4b[2]
++        ".inst 0x4fbae8cf\n"  // sdot v15.4s, v6.16b, v26.4b[3]
++        ".inst 0x4f9be0ec\n"  // sdot v12.4s, v7.16b, v27.4b[0]
++        ".inst 0x4fbbe0ed\n"  // sdot v13.4s, v7.16b, v27.4b[1]
++        ".inst 0x4f9be8ee\n"  // sdot v14.4s, v7.16b, v27.4b[2]
++        ".inst 0x4fbbe8ef\n"  // sdot v15.4s, v7.16b, v27.4b[3]
++        "scvtf v12.4s, v12.4s, #0x4\n"
++        "scvtf v13.4s, v13.4s, #0x4\n"
++        "scvtf v14.4s, v14.4s, #0x4\n"
++        "scvtf v15.4s, v15.4s, #0x4\n"
++        "fmul v29.4s, v28.4s, v30.s[0]\n"
++        "fmla v20.4s, v12.4s, v29.4s\n"
++        "fmul v31.4s, v28.4s, v30.s[1]\n"
++        "fmla v21.4s, v13.4s, v31.4s\n"
++        "fmul v29.4s, v28.4s, v30.s[2]\n"
++        "fmla v22.4s, v14.4s, v29.4s\n"
++        "fmul v31.4s, v28.4s, v30.s[3]\n"
++        "fmla v23.4s, v15.4s, v31.4s\n"
++        "mov x20, x26\n"
++        "cmp x3, #0\n"
++        "csel x8, x20, x4, gt\n"
++        "str q16, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #1\n"
++        "csel x8, x20, x4, gt\n"
++        "str q17, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #2\n"
++        "csel x8, x20, x4, gt\n"
++        "str q18, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #3\n"
++        "csel x8, x20, x4, gt\n"
++        "str q19, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #4\n"
++        "csel x8, x20, x4, gt\n"
++        "str q20, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #5\n"
++        "csel x8, x20, x4, gt\n"
++        "str q21, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #6\n"
++        "csel x8, x20, x4, gt\n"
++        "str q22, [x8]\n"
++        "add x20, x20, x2\n"
++        "cmp x3, #7\n"
++        "csel x8, x20, x4, gt\n"
++        "str q23, [x8]\n"
++        "add x19, x19, #72\n"
++        "add x19, x19, x5\n"
++        "subs x27, x27, #0x4\n"
++        "add x26, x26, #0x10\n"
++        "bne 2b\n"
++        :
++        : "r" (p)
++        : "cc", "memory", "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28"
++    );
++}
++
++// panel of up to 8 rows (nvalid) x nc columns, blocks [kb0, kb0 + nbs) of nb; acc != 0 continues the sum already in s.
++// vx is the start of the columns (block 0), vy the start of the panel in q8_0x4 (block 0, rows zero-padded up to 8).
++// The arithmetic and the summation order are those of ggml_gemm_q4_0_4x4_q8_0; only the schedule targets the in-order A55.
++void ggml_gemm_q4_0_4x4_q8_0_p8(int nb, int kb0, int nbs, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nvalid, int nc, int acc) {
++    float dummy[4];
++    q4_0_p8_args a;
++    a.b          = (const char *) vx + (size_t) kb0 * sizeof(block_q4_0x4);
++    a.a          = (const char *) vy + (size_t) kb0 * sizeof(block_q8_0x4);
++    a.res        = s;
++    a.dummy      = dummy;
++    a.pad        = 0;
++    a.a_stride   = (size_t) nb * sizeof(block_q8_0x4);
++    a.res_stride = bs * sizeof(float);
++    a.b_skip     = (size_t) (nb - nbs) * sizeof(block_q4_0x4);
++    a.nb         = nbs;
++    a.nc         = nc;
++    a.nvalid     = nvalid;
++    a.acc        = acc;
++    gemm_q4_0_4x4_p8_a55(&a);
++}
++#endif
++
+ void ggml_gemm_q4_0_4x4_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc) {
+     const int qk = QK8_0;
+     const int nb = n / qk;
+@@ -1974,7 +2505,7 @@ void ggml_gemm_q4_0_4x4_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const vo
+     const int blocklen = 4;
+ 
+     assert (n % qk == 0);
+-    assert (nr % 4 == 0);
++    assert (nr % 4 == 0 || nr < 16); // panel tail: only nr rows are written, the rows up to a multiple of 4 must be present in vy
+     assert (nc % ncols_interleaved == 0);
+ 
+     UNUSED(s);
+diff --git a/ggml/src/ggml-cpu/ggml-cpu.c b/ggml/src/ggml-cpu/ggml-cpu.c
+index 8aef980e46bfa5ecebcf58fff720d8f9f50be3af..2be3038fe06ef8ceb4bd8e1439425e2f19017b84 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -1162,6 +1162,85 @@ void ggml_set_f32_nd(const struct ggml_tensor * tensor, int i0, int i1, int i2,
+ 
+ // ggml_compute_forward_mul_mat
+ 
++#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && defined(__aarch64__) && !defined(__ARM_FEATURE_SVE)
++// q4_0 x q8_0 for one x row and nr <= 4 y rows (y stride of by bytes): each pair is exactly ggml_vec_dot_q4_0_q8_0
++// (NEON, nrc == 1), so the result is bitwise the same; the x row is unpacked once for all y rows
++static void ggml_vec_dot_q4_0_q8_0_rows(int n, float * GGML_RESTRICT s, const void * GGML_RESTRICT vx, const char * GGML_RESTRICT vy, size_t by, int nr) {
++    const int qk = QK8_0;
++    const int nb = n / qk;
++    const block_q4_0 * GGML_RESTRICT x = vx;
++
++    float32x4_t sumv0[4], sumv1[4];
++    for (int r = 0; r < nr; ++r) {
++        sumv0[r] = vdupq_n_f32(0.0f);
++        sumv1[r] = vdupq_n_f32(0.0f);
++    }
++
++    int ib = 0;
++    for (; ib + 1 < nb; ib += 2) {
++        const block_q4_0 * GGML_RESTRICT x0 = &x[ib + 0];
++        const block_q4_0 * GGML_RESTRICT x1 = &x[ib + 1];
++
++        const uint8x16_t m4b = vdupq_n_u8(0x0F);
++        const int8x16_t  s8b = vdupq_n_s8(0x8);
++
++        const uint8x16_t v0_0 = vld1q_u8(x0->qs);
++        const uint8x16_t v0_1 = vld1q_u8(x1->qs);
++
++        // 4-bit -> 8-bit
++        const int8x16_t v0_0l = vreinterpretq_s8_u8(vandq_u8  (v0_0, m4b));
++        const int8x16_t v0_0h = vreinterpretq_s8_u8(vshrq_n_u8(v0_0, 4));
++        const int8x16_t v0_1l = vreinterpretq_s8_u8(vandq_u8  (v0_1, m4b));
++        const int8x16_t v0_1h = vreinterpretq_s8_u8(vshrq_n_u8(v0_1, 4));
++
++        // sub 8
++        const int8x16_t v0_0ls = vsubq_s8(v0_0l, s8b);
++        const int8x16_t v0_0hs = vsubq_s8(v0_0h, s8b);
++        const int8x16_t v0_1ls = vsubq_s8(v0_1l, s8b);
++        const int8x16_t v0_1hs = vsubq_s8(v0_1h, s8b);
++
++        for (int r = 0; r < nr; ++r) {
++            const block_q8_0 * GGML_RESTRICT y0 = (const block_q8_0 *) (vy + r*by) + ib;
++            const block_q8_0 * GGML_RESTRICT y1 = y0 + 1;
++
++            // load y
++            const int8x16_t v1_0l = vld1q_s8(y0->qs);
++            const int8x16_t v1_0h = vld1q_s8(y0->qs + 16);
++            const int8x16_t v1_1l = vld1q_s8(y1->qs);
++            const int8x16_t v1_1h = vld1q_s8(y1->qs + 16);
++
++            // dot product into int32x4_t
++            const int32x4_t p_0 = ggml_vdotq_s32(ggml_vdotq_s32(vdupq_n_s32(0), v0_0ls, v1_0l), v0_0hs, v1_0h);
++            const int32x4_t p_1 = ggml_vdotq_s32(ggml_vdotq_s32(vdupq_n_s32(0), v0_1ls, v1_1l), v0_1hs, v1_1h);
++
++            sumv0[r] = vmlaq_n_f32(sumv0[r], vcvtq_f32_s32(p_0), GGML_CPU_FP16_TO_FP32(x0->d)*GGML_CPU_FP16_TO_FP32(y0->d));
++            sumv1[r] = vmlaq_n_f32(sumv1[r], vcvtq_f32_s32(p_1), GGML_CPU_FP16_TO_FP32(x1->d)*GGML_CPU_FP16_TO_FP32(y1->d));
++        }
++    }
++
++    for (int r = 0; r < nr; ++r) {
++        const block_q8_0 * GGML_RESTRICT y = (const block_q8_0 *) (vy + r*by);
++        float sumf = vaddvq_f32(sumv0[r]) + vaddvq_f32(sumv1[r]);
++        for (int jb = ib; jb < nb; ++jb) {
++            int sumi0 = 0;
++            int sumi1 = 0;
++
++            for (int j = 0; j < qk/2; ++j) {
++                const int v0 = (x[jb].qs[j] & 0x0F) - 8;
++                const int v1 = (x[jb].qs[j] >>   4) - 8;
++
++                sumi0 += (v0 * y[jb].qs[j]);
++                sumi1 += (v1 * y[jb].qs[j + qk/2]);
++            }
++
++            int sumi = sumi0 + sumi1;
++            sumf += sumi*GGML_CPU_FP16_TO_FP32(x[jb].d)*GGML_CPU_FP16_TO_FP32(y[jb].d);
++        }
++        s[r] = sumf;
++    }
++}
++#endif
++
+ static void ggml_compute_forward_mul_mat_one_chunk(
+     const struct ggml_compute_params * params,
+     struct ggml_tensor * dst,
+@@ -1205,6 +1284,28 @@ static void ggml_compute_forward_mul_mat_one_chunk(
+ 
+     const size_t src1_col_stride = src1_cont || src1->type != vec_dot_type ? row_size : nb11;
+ 
++#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && defined(__aarch64__) && !defined(__ARM_FEATURE_SVE)
++    // 2-4 y rows on q4_0 without repacking (the output head in the MTP verification step): the x row is unpacked once
++    // for all y rows
++    if (type == GGML_TYPE_Q4_0 && vec_dot_type == GGML_TYPE_Q8_0 && num_rows_per_vec_dot == 1 &&
++        ne02 == 1 && ne03 == 1 && ne12 == 1 && ne13 == 1 && (src1_cont || src1->type != vec_dot_type) && ir1_end - ir1_start >= 2) {
++        for (int64_t iir0 = ir0_start; iir0 < ir0_end; iir0 += blck_0) {
++            for (int64_t ir1 = ir1_start; ir1 < ir1_end; ir1 += 4) {
++                const int nr = (int) MIN(4, ir1_end - ir1);
++                const char * src1_col = (const char *) wdata + ir1*row_size;
++                for (int64_t ir0 = iir0; ir0 < iir0 + blck_0 && ir0 < ir0_end; ++ir0) {
++                    float out[4];
++                    ggml_vec_dot_q4_0_q8_0_rows(ne00, out, (const char *) src0->data + ir0*nb01, src1_col, row_size, nr);
++                    for (int r = 0; r < nr; ++r) {
++                        ((float *) ((char *) dst->data + (ir1 + r)*nb1))[ir0] = out[r];
++                    }
++                }
++            }
++        }
++        return;
++    }
++#endif
++
+     // attempt to reduce false-sharing (does not seem to make a difference)
+     // 16 * 2, accounting for mmla kernels
+     float tmp[32];
+diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
+index d881fc642d4122369d72a2f15602d54105cfb08c..415133096f850152afb77688ef3354cfd833f6d1 100644
+--- a/ggml/src/ggml-cpu/ops.cpp
++++ b/ggml/src/ggml-cpu/ops.cpp
+@@ -9446,6 +9446,531 @@ static void ggml_flash_attn_ext_reduce_partials(
+     }
+ }
+ 
++// The heads of one KV group and a block of positions walk the KV cells together: a K/V row is read once per block,
++// not once per query (in one_chunk every query walks the whole cache again). The arithmetic of each query is exactly
++// one_chunk: the same functions and expressions, the cells in the same order; the result is bitwise the same.
++static constexpr int64_t FA_GROUP_MAXQ = 40; // queries (position x head) per block: Q and the accumulators stay in L1
++
++static bool ggml_flash_attn_ext_group_ok(const ggml_compute_params * params, const ggml_tensor * dst) {
++#if !defined(__aarch64__) || defined(__ARM_FEATURE_SVE)
++    // bitwise equality with one_chunk is verified only on arm64 without SVE (A55, Apple); on x86 the result differs
++    GGML_UNUSED(params);
++    GGML_UNUSED(dst);
++    return false;
++#else
++    const ggml_tensor * q    = dst->src[0];
++    const ggml_tensor * k    = dst->src[1];
++    const ggml_tensor * v    = dst->src[2];
++    const ggml_tensor * mask = dst->src[3];
++
++    float max_bias = 0.0f;
++    memcpy(&max_bias, (const float *) dst->op_params + 1, sizeof(float));
++
++    return !params->use_ref && q->type == GGML_TYPE_F32 && k->type == GGML_TYPE_F16 && v->type == GGML_TYPE_F16 &&
++        dst->src[4] == nullptr && max_bias == 0.0f && (!mask || (mask->type == GGML_TYPE_F16 && mask->ne[2] == 1)) &&
++        q->ne[2] % k->ne[2] == 0 && k->ne[2] == v->ne[2] && k->ne[3] == v->ne[3] && q->ne[3] % k->ne[3] == 0 &&
++        q->ne[2] / k->ne[2] <= FA_GROUP_MAXQ;
++#endif
++}
++
++// work memory of a block of nq queries, in floats
++static int64_t ggml_flash_attn_ext_group_scratch(int64_t nq, int64_t DK, int64_t DV) {
++    return (nq*(DK + DV) + 1)/2 + DV + 2*nq + CACHE_LINE_SIZE_F32;
++}
++
++// queries: KV head hk (all its q heads), positions [j0, j0 + npos), cells [ic_start, ic_end);
++// partials != nullptr: partial sums as in one_chunk, otherwise the result goes to dst
++static void ggml_compute_forward_flash_attn_ext_f16_group(
++        ggml_tensor * dst,
++        float * scratch,
++        int64_t iq3, int64_t hk, int64_t j0, int64_t npos,
++        int64_t ic_start, int64_t ic_end,
++        float * partials, int64_t partial_stride) {
++    const ggml_tensor * q    = dst->src[0];
++    const ggml_tensor * k    = dst->src[1];
++    const ggml_tensor * v    = dst->src[2];
++    const ggml_tensor * mask = dst->src[3];
++
++    GGML_TENSOR_LOCALS(int64_t, neq, q,   ne)
++    GGML_TENSOR_LOCALS(size_t,  nbq, q,   nb)
++    GGML_TENSOR_LOCALS(int64_t, nek, k,   ne)
++    GGML_TENSOR_LOCALS(size_t,  nbk, k,   nb)
++    GGML_TENSOR_LOCALS(int64_t, nev, v,   ne)
++    GGML_TENSOR_LOCALS(size_t,  nbv, v,   nb)
++    GGML_TENSOR_LOCALS(int64_t, ne,  dst, ne)
++    GGML_TENSOR_LOCALS(size_t,  nb,  dst, nb)
++
++    const int64_t DK = nek0;
++    const int64_t DV = nev0;
++    const int64_t G  = neq2/nek2;
++    const int64_t nq = G*npos;
++
++    float scale         = 1.0f;
++    float logit_softcap = 0.0f;
++
++    memcpy(&scale,         (float *) dst->op_params + 0, sizeof(float));
++    memcpy(&logit_softcap, (float *) dst->op_params + 2, sizeof(float));
++
++    if (logit_softcap != 0) {
++        scale /= logit_softcap;
++    }
++
++    const float slope = 1.0f; // max_bias == 0
++
++    ggml_type         const k_vec_dot_type = ggml_get_type_traits_cpu(k->type)->vec_dot_type;
++    ggml_from_float_t const q_to_vec_dot   = ggml_get_type_traits_cpu(k_vec_dot_type)->from_float;
++    ggml_vec_dot_t    const kq_vec_dot     = ggml_get_type_traits_cpu(k->type)->vec_dot;
++
++    ggml_fp16_t * Q_q   = (ggml_fp16_t *) scratch;                          // [nq][DK]
++    ggml_fp16_t * VKQ16 = Q_q + nq*DK;                                      // [nq][DV]
++    float       * VKQ32 = scratch + (nq*(DK + DV) + 1)/2;                   // [DV]
++    float       * S     = VKQ32 + DV;                                       // [nq]
++    float       * M     = S + nq;                                           // [nq]
++
++    const int64_t ik3 = iq3/(neq3/nek3);
++
++    const ggml_fp16_t * mp[FA_GROUP_MAXQ];
++
++    // query r = position*G + head
++    for (int64_t jp = 0; jp < npos; ++jp) {
++        const int64_t iq1 = j0 + jp;
++        mp[jp] = mask ? (const ggml_fp16_t *) ((const char *) mask->data + iq1*mask->nb[1] + (iq3%mask->ne[3])*mask->nb[3]) : NULL;
++        for (int64_t g = 0; g < G; ++g) {
++            const int64_t r   = jp*G + g;
++            const int64_t iq2 = hk*G + g;
++            S[r] = 0.0f;
++            M[r] = -INFINITY;
++            memset(VKQ16 + r*DV, 0, DV*sizeof(ggml_fp16_t));
++            const float * pq = (const float *) ((char *) q->data + (iq1*nbq1 + iq2*nbq2 + iq3*nbq3));
++            q_to_vec_dot(pq, Q_q + r*DK, DK);
++        }
++    }
++
++#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC) && defined(__aarch64__) && !defined(__ARM_FEATURE_SVE)
++    // DK = DV = 128: the K and V rows stay in registers for the whole block; the operations are those of ggml_vec_dot_f16 / ggml_vec_scale_f16 /
++    // ggml_vec_mad_f16 on NEON fp16 (four accumulators, the same reduction), so the result is unchanged
++    if (DK == 128 && DV == 128 && kq_vec_dot == ggml_get_type_traits_cpu(GGML_TYPE_F16)->vec_dot && logit_softcap == 0.0f) {
++        float sg[FA_GROUP_MAXQ];
++        for (int64_t ic = ic_start; ic < ic_end; ++ic) {
++            const __fp16 * k_data = (const __fp16 *) ((const char *) k->data + (ic*nbk1 + hk*nbk2 + ik3*nbk3));
++            const __fp16 * v_data = (const __fp16 *) ((const char *) v->data + (ic*nbv1 + hk*nbv2 + ik3*nbv3));
++
++            float mvp[FA_GROUP_MAXQ];
++            bool  any = false;
++            for (int64_t jp = 0; jp < npos; ++jp) {
++                mvp[jp] = mp[jp] ? slope*GGML_CPU_FP16_TO_FP32(mp[jp][ic]) : 0.0f;
++                any |= mvp[jp] != -INFINITY;
++            }
++            if (!any) {
++                continue;
++            }
++
++            {
++                float16x8_t kr[16];
++                for (int i = 0; i < 16; ++i) {
++                    kr[i] = vld1q_f16(k_data + 8*i);
++                }
++                for (int64_t jp = 0; jp < npos; ++jp) {
++                    if (mvp[jp] == -INFINITY) {
++                        continue;
++                    }
++                    for (int64_t g = 0; g < G; ++g) {
++                        const int64_t  r  = jp*G + g;
++                        const __fp16 * qp = (const __fp16 *) (Q_q + r*DK);
++                        float16x8_t sum[4] = { vdupq_n_f16(0.0f), vdupq_n_f16(0.0f), vdupq_n_f16(0.0f), vdupq_n_f16(0.0f) };
++                        for (int i = 0; i < 16; i += 4) {
++                            for (int j = 0; j < 4; ++j) {
++                                sum[j] = vfmaq_f16(sum[j], kr[i + j], vld1q_f16(qp + 8*(i + j)));
++                            }
++                        }
++                        sum[0] = vaddq_f16(sum[0], sum[2]);
++                        sum[1] = vaddq_f16(sum[1], sum[3]);
++                        sum[0] = vaddq_f16(sum[0], sum[1]);
++                        const float32x4_t t0 = vcvt_f32_f16(vget_low_f16 (sum[0]));
++                        const float32x4_t t1 = vcvt_f32_f16(vget_high_f16(sum[0]));
++                        sg[r] = vaddvq_f32(vaddq_f32(t0, t1));
++                    }
++                }
++            }
++
++            float16x8_t vr[16];
++            for (int i = 0; i < 16; ++i) {
++                vr[i] = vld1q_f16(v_data + 8*i);
++            }
++            for (int64_t jp = 0; jp < npos; ++jp) {
++                const float mv = mvp[jp];
++                if (mv == -INFINITY) {
++                    continue;
++                }
++                for (int64_t g = 0; g < G; ++g) {
++                    const int64_t r   = jp*G + g;
++                    __fp16 *      vkq = (__fp16 *) (VKQ16 + r*DV);
++
++                    float s = sg[r]; // KQ value
++
++                    s = s*scale; // scale KQ value
++                    __asm__("" : "+w"(s)); // keeps the mask out of an fma: in one_chunk the softcap branch separates them
++
++                    s += mv; // apply mask
++
++                    const float Mold = M[r];
++
++                    float ms = 1.0f; // upon new higher max val, scale VKQ and KQ sum with this value
++                    float vs = 1.0f; // post-softmax KQ value, expf(s - M)
++
++                    if (s > M[r]) {
++                        // s is new maximum, ms < 1.0f, vs == expf(s - s) == 1.0f
++                        M[r] = s;
++                        ms = expf(Mold - M[r]);
++
++                        // V = V*expf(Mold - M)
++                        const float16x8_t vx = vdupq_n_f16(ms);
++                        for (int i = 0; i < 16; ++i) {
++                            vst1q_f16(vkq + 8*i, vmulq_f16(vld1q_f16(vkq + 8*i), vx));
++                        }
++                    } else {
++                        // no new maximum, ms == 1.0f, vs != 1.0f
++                        vs = expf(s - M[r]);
++                    }
++
++                    // V += v*expf(s - M)
++                    const float16x8_t vx = vdupq_n_f16(vs);
++                    for (int i = 0; i < 16; ++i) {
++                        vst1q_f16(vkq + 8*i, vfmaq_f16(vld1q_f16(vkq + 8*i), vr[i], vx));
++                    }
++
++                    S[r] = S[r]*ms + vs; // scale and increment sum with partial sum
++                }
++            }
++        }
++    } else
++#endif
++    for (int64_t ic = ic_start; ic < ic_end; ++ic) {
++        const char * k_data = (const char *) k->data + (ic*nbk1 + hk*nbk2 + ik3*nbk3);
++        const char * v_data = (const char *) v->data + (ic*nbv1 + hk*nbv2 + ik3*nbv3);
++
++        for (int64_t jp = 0; jp < npos; ++jp) {
++            const float mv = mp[jp] ? slope*GGML_CPU_FP16_TO_FP32(mp[jp][ic]) : 0.0f;
++            if (mv == -INFINITY) {
++                continue;
++            }
++
++            for (int64_t g = 0; g < G; ++g) {
++                const int64_t r = jp*G + g;
++                ggml_fp16_t * vkq = VKQ16 + r*DV;
++
++                float s; // KQ value
++
++                kq_vec_dot(DK, &s, 0, k_data, 0, Q_q + r*DK, 0, 1);
++
++                s = s*scale; // scale KQ value
++
++                if (logit_softcap != 0.0f) {
++                    s = logit_softcap*tanhf(s);
++                }
++
++                s += mv; // apply mask
++
++                const float Mold = M[r];
++
++                float ms = 1.0f; // upon new higher max val, scale VKQ and KQ sum with this value
++                float vs = 1.0f; // post-softmax KQ value, expf(s - M)
++
++                if (s > M[r]) {
++                    // s is new maximum, ms < 1.0f, vs == expf(s - s) == 1.0f
++                    M[r] = s;
++                    ms = expf(Mold - M[r]);
++
++                    // V = V*expf(Mold - M)
++                    ggml_vec_scale_f16(DV, vkq, ms);
++                } else {
++                    // no new maximum, ms == 1.0f, vs != 1.0f
++                    vs = expf(s - M[r]);
++                }
++
++                // V += v*expf(s - M)
++                ggml_vec_mad_f16(DV, vkq, (const ggml_fp16_t *) v_data, vs);
++
++                S[r] = S[r]*ms + vs; // scale and increment sum with partial sum
++            }
++        }
++    }
++
++    for (int64_t jp = 0; jp < npos; ++jp) {
++        for (int64_t g = 0; g < G; ++g) {
++            const int64_t r   = jp*G + g;
++            const int64_t iq1 = j0 + jp;
++            const int64_t iq2 = hk*G + g;
++
++            for (int64_t d = 0; d < DV; ++d) {
++                VKQ32[d] = GGML_CPU_FP16_TO_FP32(VKQ16[r*DV + d]);
++            }
++
++            if (partials) {
++                float * partial = partials + (iq2 + iq3*neq2) * partial_stride;
++                partial[0] = M[r];
++                partial[1] = S[r];
++                memcpy(partial + 2, VKQ32, DV * sizeof(float));
++            } else {
++                // V /= S
++                const float S_inv = S[r] == 0.0f ? 0.0f : 1.0f/S[r];
++                ggml_vec_scale_f32(DV, VKQ32, S_inv);
++
++                // permute(0, 2, 1, 3)
++                memcpy((char *) dst->data + (iq3*ne2*ne1 + iq2 + iq1*ne1)*nb1, VKQ32, nb1);
++            }
++        }
++    }
++}
++
++#if defined(__ARM_NEON) && defined(__aarch64__) && !defined(__ARM_FEATURE_SVE)
++// tiled FA (batches of >= GGML_FA_TILE_Q rows) on NEON: the heads of one KV group and a block of positions go together, a K/V tile
++// is converted to f32 once per group. Each row is computed with the same operations in the same order as
++// ggml_compute_forward_flash_attn_ext_tiled (fma over d and over the tile cells, scale after K*Q, mask, tile softmax,
++// sum in double), so the result is bitwise the same
++static constexpr int FA_NEON_M  = GGML_FA_TILE_Q;  // rows (position x head) per block
++static constexpr int FA_NEON_KV = GGML_FA_TILE_KV; // KV cells per tile
++static constexpr int FA_NEON_PB = 16;              // positions per block, at most
++
++// C[4 x 16] += A[4 x K] * B[K x 16], K is a multiple of 4
++static inline void fa_neon_ukernel_4x16(float * C, int ldc, const float * A, int lda, const float * B, int ldb, int K) {
++    float32x4_t c00 = vld1q_f32(C + 0*ldc), c01 = vld1q_f32(C + 0*ldc + 4), c02 = vld1q_f32(C + 0*ldc + 8), c03 = vld1q_f32(C + 0*ldc + 12);
++    float32x4_t c10 = vld1q_f32(C + 1*ldc), c11 = vld1q_f32(C + 1*ldc + 4), c12 = vld1q_f32(C + 1*ldc + 8), c13 = vld1q_f32(C + 1*ldc + 12);
++    float32x4_t c20 = vld1q_f32(C + 2*ldc), c21 = vld1q_f32(C + 2*ldc + 4), c22 = vld1q_f32(C + 2*ldc + 8), c23 = vld1q_f32(C + 2*ldc + 12);
++    float32x4_t c30 = vld1q_f32(C + 3*ldc), c31 = vld1q_f32(C + 3*ldc + 4), c32 = vld1q_f32(C + 3*ldc + 8), c33 = vld1q_f32(C + 3*ldc + 12);
++    for (int k = 0; k < K; k += 4) {
++        const float32x4_t a0 = vld1q_f32(A + 0*lda + k);
++        const float32x4_t a1 = vld1q_f32(A + 1*lda + k);
++        const float32x4_t a2 = vld1q_f32(A + 2*lda + k);
++        const float32x4_t a3 = vld1q_f32(A + 3*lda + k);
++#define FA_NEON_STEP(L) { \
++        const float * b = B + (k + L)*ldb; \
++        const float32x4_t b0 = vld1q_f32(b), b1 = vld1q_f32(b + 4), b2 = vld1q_f32(b + 8), b3 = vld1q_f32(b + 12); \
++        c00 = vfmaq_laneq_f32(c00, b0, a0, L); c01 = vfmaq_laneq_f32(c01, b1, a0, L); c02 = vfmaq_laneq_f32(c02, b2, a0, L); c03 = vfmaq_laneq_f32(c03, b3, a0, L); \
++        c10 = vfmaq_laneq_f32(c10, b0, a1, L); c11 = vfmaq_laneq_f32(c11, b1, a1, L); c12 = vfmaq_laneq_f32(c12, b2, a1, L); c13 = vfmaq_laneq_f32(c13, b3, a1, L); \
++        c20 = vfmaq_laneq_f32(c20, b0, a2, L); c21 = vfmaq_laneq_f32(c21, b1, a2, L); c22 = vfmaq_laneq_f32(c22, b2, a2, L); c23 = vfmaq_laneq_f32(c23, b3, a2, L); \
++        c30 = vfmaq_laneq_f32(c30, b0, a3, L); c31 = vfmaq_laneq_f32(c31, b1, a3, L); c32 = vfmaq_laneq_f32(c32, b2, a3, L); c33 = vfmaq_laneq_f32(c33, b3, a3, L); }
++        FA_NEON_STEP(0) FA_NEON_STEP(1) FA_NEON_STEP(2) FA_NEON_STEP(3)
++#undef FA_NEON_STEP
++    }
++    vst1q_f32(C + 0*ldc, c00); vst1q_f32(C + 0*ldc + 4, c01); vst1q_f32(C + 0*ldc + 8, c02); vst1q_f32(C + 0*ldc + 12, c03);
++    vst1q_f32(C + 1*ldc, c10); vst1q_f32(C + 1*ldc + 4, c11); vst1q_f32(C + 1*ldc + 8, c12); vst1q_f32(C + 1*ldc + 12, c13);
++    vst1q_f32(C + 2*ldc, c20); vst1q_f32(C + 2*ldc + 4, c21); vst1q_f32(C + 2*ldc + 8, c22); vst1q_f32(C + 2*ldc + 12, c23);
++    vst1q_f32(C + 3*ldc, c30); vst1q_f32(C + 3*ldc + 4, c31); vst1q_f32(C + 3*ldc + 8, c32); vst1q_f32(C + 3*ldc + 12, c33);
++}
++
++// C[M x N] += A[M x K] * B[K x N]; M and K are multiples of 4, N is a multiple of 16
++static void fa_neon_gemm(float * C, int ldc, const float * A, int lda, const float * B, int ldb, int M, int K, int N) {
++    for (int i = 0; i < M; i += 4) {
++        for (int j = 0; j < N; j += 16) {
++            fa_neon_ukernel_4x16(C + i*ldc + j, ldc, A + i*lda, lda, B + j, ldb, K);
++        }
++    }
++}
++
++static bool ggml_compute_forward_flash_attn_ext_f16_neon(const ggml_compute_params * params, ggml_tensor * dst) {
++    const ggml_tensor * q     = dst->src[0];
++    const ggml_tensor * k     = dst->src[1];
++    const ggml_tensor * v     = dst->src[2];
++    const ggml_tensor * mask  = dst->src[3];
++    const ggml_tensor * sinks = dst->src[4];
++
++    GGML_TENSOR_LOCALS(int64_t, neq, q,   ne)
++    GGML_TENSOR_LOCALS(size_t,  nbq, q,   nb)
++    GGML_TENSOR_LOCALS(int64_t, nek, k,   ne)
++    GGML_TENSOR_LOCALS(size_t,  nbk, k,   nb)
++    GGML_TENSOR_LOCALS(int64_t, nev, v,   ne)
++    GGML_TENSOR_LOCALS(size_t,  nbv, v,   nb)
++    GGML_TENSOR_LOCALS(int64_t, ne,  dst, ne)
++    GGML_TENSOR_LOCALS(size_t,  nb,  dst, nb)
++
++    const int64_t DK = nek0;
++    const int64_t DV = nev0;
++    const int64_t N  = neq1;
++
++    float scale = 1.0f, max_bias = 0.0f, logit_softcap = 0.0f;
++    memcpy(&scale,         (float *) dst->op_params + 0, sizeof(float));
++    memcpy(&max_bias,      (float *) dst->op_params + 1, sizeof(float));
++    memcpy(&logit_softcap, (float *) dst->op_params + 2, sizeof(float));
++
++    if (q->type != GGML_TYPE_F32 || k->type != GGML_TYPE_F16 || v->type != GGML_TYPE_F16 ||
++        sinks || max_bias != 0.0f || logit_softcap != 0.0f || !mask || mask->ne[2] != 1 ||
++        DK % 4 != 0 || DV % 16 != 0 || neq2 % nek2 != 0 || nek2 != nev2 || nek3 != nev3 || neq3 % nek3 != 0 ||
++        neq2/nek2 > FA_NEON_M) {
++        return false;
++    }
++
++    const int64_t G   = neq2/nek2; // heads per KV head
++    const int64_t rk3 = neq3/nek3;
++    const int     nth = params->nth;
++    const int     ith = params->ith;
++    constexpr int KVT = FA_NEON_KV;
++
++    // positions per block: minimizes the estimate "blocks per thread x (rows + K/V conversion)"
++    int64_t PB = 1;
++    {
++        const int64_t pb_max = std::min<int64_t>(FA_NEON_PB, FA_NEON_M/G);
++        int64_t best = INT64_MAX;
++        for (int64_t pb = 1; pb <= pb_max; pb++) {
++            const int64_t units = nek2*neq3*((N + pb - 1)/pb);
++            const int64_t cost  = ((units + nth - 1)/nth)*(GGML_PAD(G*pb, 4) + 8);
++            if (cost < best) { best = cost; PB = pb; }
++        }
++    }
++    const int64_t nblk    = (N + PB - 1)/PB;
++    const int64_t n_units = nek2*neq3*nblk;
++
++    // the layout uses the same share of wdata as the tiled path; the chunk counter and the barrier are the caller's
++    const size_t stride = GGML_FA_TILE_Q*DK + 2*GGML_FA_TILE_Q*GGML_FA_TILE_KV + GGML_FA_TILE_Q*DV + GGML_FA_TILE_KV*DV + GGML_FA_TILE_KV*DK + CACHE_LINE_SIZE_F32;
++    GGML_ASSERT((size_t)(FA_NEON_M*DK + DK*KVT + FA_NEON_M*KVT + KVT*DV + FA_NEON_M*DV + FA_NEON_PB*KVT + 2*FA_NEON_M) <= stride);
++    float * Qf = (float *) params->wdata + ith*stride;
++    float * KT = Qf + FA_NEON_M*DK;
++    float * S  = KT + DK*KVT;
++    float * Vf = S  + FA_NEON_M*KVT;
++    float * O  = Vf + KVT*DV;
++    float * MF = O  + FA_NEON_M*DV;
++    float * Mx = MF + FA_NEON_PB*KVT;
++    float * Sm = Mx + FA_NEON_M;
++
++    for (int64_t u = ith; u < n_units; u = ggml_threadpool_chunk_add(params->threadpool, 1)) {
++        const int64_t iq3  = u/(nek2*nblk);
++        const int64_t hk   = (u/nblk) % nek2;
++        const int64_t j0   = (u % nblk)*PB;
++        const int64_t npos = std::min(PB, N - j0);
++        const int     M    = (int)(G*npos);
++        const int     Mp   = (int)GGML_PAD(M, 4);
++        const int64_t ik3  = iq3/rk3;
++
++        // row r = position*G + head
++        for (int64_t jp = 0; jp < npos; jp++) {
++            for (int64_t g = 0; g < G; g++) {
++                const float * pq = (const float *) ((const char *) q->data + (j0 + jp)*nbq1 + (hk*G + g)*nbq2 + iq3*nbq3);
++                float * dq = Qf + (jp*G + g)*DK;
++                memcpy(dq, pq, DK*sizeof(float));
++            }
++        }
++        memset(Qf + M*DK, 0, (Mp - M)*DK*sizeof(float));
++        memset(O, 0, Mp*DV*sizeof(float));
++        for (int r = 0; r < Mp; r++) { Mx[r] = -INFINITY; Sm[r] = 0.0f; }
++
++        for (int64_t c0 = 0; c0 < nek1; c0 += KVT) {
++            const int kvt = (int) std::min<int64_t>(KVT, nek1 - c0);
++
++            // tile mask in f32; a tile without a single open cell is skipped
++            bool any = false;
++            for (int64_t jp = 0; jp < npos; jp++) {
++                float * mf = MF + jp*KVT;
++                if (mask) {
++                    const ggml_fp16_t * mp = (const ggml_fp16_t *) ((const char *) mask->data + (j0 + jp)*mask->nb[1] + (iq3 % mask->ne[3])*mask->nb[3]) + c0;
++                    for (int t = 0; t < kvt; t++) {
++                        mf[t] = GGML_CPU_FP16_TO_FP32(mp[t]);
++                        any |= mf[t] != -INFINITY;
++                    }
++                } else {
++                    for (int t = 0; t < kvt; t++) { mf[t] = 0.0f; }
++                    any = true;
++                }
++                for (int t = kvt; t < KVT; t++) { mf[t] = -INFINITY; }
++            }
++            if (!any) {
++                continue;
++            }
++
++            // K tile -> KT[d][t] (transposed in 4x4 blocks), the tile tail is zeroed
++            {
++                const char * kb = (const char *) k->data + c0*nbk1 + hk*nbk2 + ik3*nbk3;
++                int t = 0;
++                for (; t + 4 <= kvt; t += 4) {
++                    const ggml_fp16_t * k0 = (const ggml_fp16_t *) (kb + (t + 0)*nbk1);
++                    const ggml_fp16_t * k1 = (const ggml_fp16_t *) (kb + (t + 1)*nbk1);
++                    const ggml_fp16_t * k2 = (const ggml_fp16_t *) (kb + (t + 2)*nbk1);
++                    const ggml_fp16_t * k3 = (const ggml_fp16_t *) (kb + (t + 3)*nbk1);
++                    for (int64_t d = 0; d < DK; d += 4) {
++                        const float32x4_t r0 = vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16((const uint16_t *) k0 + d)));
++                        const float32x4_t r1 = vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16((const uint16_t *) k1 + d)));
++                        const float32x4_t r2 = vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16((const uint16_t *) k2 + d)));
++                        const float32x4_t r3 = vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16((const uint16_t *) k3 + d)));
++                        const float64x2_t t0 = vreinterpretq_f64_f32(vtrn1q_f32(r0, r1));
++                        const float64x2_t t1 = vreinterpretq_f64_f32(vtrn2q_f32(r0, r1));
++                        const float64x2_t t2 = vreinterpretq_f64_f32(vtrn1q_f32(r2, r3));
++                        const float64x2_t t3 = vreinterpretq_f64_f32(vtrn2q_f32(r2, r3));
++                        vst1q_f32(KT + (d + 0)*KVT + t, vreinterpretq_f32_f64(vtrn1q_f64(t0, t2)));
++                        vst1q_f32(KT + (d + 1)*KVT + t, vreinterpretq_f32_f64(vtrn1q_f64(t1, t3)));
++                        vst1q_f32(KT + (d + 2)*KVT + t, vreinterpretq_f32_f64(vtrn2q_f64(t0, t2)));
++                        vst1q_f32(KT + (d + 3)*KVT + t, vreinterpretq_f32_f64(vtrn2q_f64(t1, t3)));
++                    }
++                }
++                for (; t < KVT; t++) {
++                    const ggml_fp16_t * kr = (const ggml_fp16_t *) (kb + t*nbk1);
++                    for (int64_t d = 0; d < DK; d++) {
++                        KT[d*KVT + t] = t < kvt ? GGML_CPU_FP16_TO_FP32(kr[d]) : 0.0f;
++                    }
++                }
++            }
++
++            memset(S, 0, Mp*KVT*sizeof(float));
++            fa_neon_gemm(S, KVT, Qf, (int) DK, KT, KVT, Mp, (int) DK, KVT);
++
++            // online softmax over the tile rows: (K*Q)*scale + mask, then exactly the tiled path
++            for (int r = 0; r < Mp; r++) {
++                float * sr = S + r*KVT;
++                if (r >= M) {
++                    memset(sr, 0, KVT*sizeof(float));
++                    continue;
++                }
++                const float * mf = MF + (r/G)*KVT;
++                for (int t = 0; t < KVT; t += 4) {
++                    float32x4_t s = vmulq_n_f32(vld1q_f32(sr + t), scale);
++                    __asm__("" : "+w"(s)); // keeps the mask out of an fma: in the tiled path scale and mask are separate passes
++                    vst1q_f32(sr + t, vaddq_f32(s, vld1q_f32(mf + t)));
++                }
++                float tile_max;
++                ggml_vec_max_f32(KVT, &tile_max, sr);
++                if (tile_max == -INFINITY) {
++                    memset(sr, 0, KVT*sizeof(float));
++                    continue;
++                }
++                const float Mold = Mx[r];
++                const float Mnew = fmaxf(Mold, tile_max);
++                if (Mnew > Mold) {
++                    const float ms = expf(Mold - Mnew);
++                    ggml_vec_scale_f32((int) DV, O + r*DV, ms);
++                    Sm[r] *= ms;
++                }
++                Mx[r] = Mnew;
++                Sm[r] += ggml_vec_soft_max_f32(KVT, sr, sr, Mnew);
++            }
++
++            // V tile -> f32, the tail is zeroed
++            {
++                const char * vb = (const char *) v->data + c0*nbv1 + hk*nbv2 + ik3*nbv3;
++                for (int t = 0; t < kvt; t++) {
++                    ggml_cpu_fp16_to_fp32((const ggml_fp16_t *) (vb + t*nbv1), Vf + t*DV, DV);
++                }
++                if (kvt < KVT) {
++                    memset(Vf + kvt*DV, 0, (KVT - kvt)*DV*sizeof(float));
++                }
++            }
++
++            fa_neon_gemm(O, (int) DV, S, KVT, Vf, (int) DV, Mp, KVT, (int) DV);
++        }
++
++        for (int r = 0; r < M; r++) {
++            const int64_t iq1 = j0 + r/G;
++            const int64_t iq2 = hk*G + r % G;
++            const float   inv = Sm[r] == 0.0f ? 0.0f : 1.0f/Sm[r];
++            float * out = (float *) ((char *) dst->data + (iq3*ne2*ne1 + iq2 + iq1*ne1)*nb1);
++            const float * o = O + r*DV;
++            for (int64_t d = 0; d < DV; d += 4) {
++                vst1q_f32(out + d, vmulq_n_f32(vld1q_f32(o + d), inv));
++            }
++        }
++    }
++
++    return true;
++}
++#endif
++
+ static void ggml_compute_forward_flash_attn_ext_f16(
+         const ggml_compute_params * params,
+         ggml_tensor * dst) {
+@@ -9510,6 +10035,16 @@ static void ggml_compute_forward_flash_attn_ext_f16(
+         float * const partials_base = (float *) params->wdata + nth * (DK + 2*DV + CACHE_LINE_SIZE_F32);
+         float * const scratch       = (float *) params->wdata + ith * (DK + 2*DV + CACHE_LINE_SIZE_F32);
+ 
++        // the heads of a KV group together (see ggml_compute_forward_flash_attn_ext_f16_group): the work unit is (row, KV head, chunk);
++        // the work memory follows the partial sums
++        // if the plan has no room for the group buffer (e.g. 40 q heads over 8 KV heads), fall back to the previous path
++        const int64_t G          = neq2/nek2;
++        const int64_t off_g      = nth*(DK + 2*DV + CACHE_LINE_SIZE_F32) + GGML_FA_SPLIT_ROWS_MAX*neq2*nth*partial_size;
++        const int64_t per_g      = ggml_flash_attn_ext_group_scratch(G, DK, DV);
++        const bool    group      = ggml_flash_attn_ext_group_ok(params, dst) && (size_t) (off_g + nth*per_g)*sizeof(float) <= params->wsize;
++        const int64_t n_head_job = group ? nek2 : neq2;
++        float * scratch_g = group ? (float *) params->wdata + off_g + ith*per_g : nullptr;
++
+         int64_t n_kv[GGML_FA_SPLIT_ROWS_MAX];
+         for (int64_t iq1 = 0; iq1 < neq1; ++iq1) {
+             const ggml_fp16_t * mp = (const ggml_fp16_t *) ((const char *) mask->data + iq1*mask->nb[1]);
+@@ -9525,7 +10060,7 @@ static void ggml_compute_forward_flash_attn_ext_f16(
+         // take the triples dynamically (in SWA layers the open cells lie in one chunk); rows with n_kv < 512 go as whole (row, head)
+         int64_t n_items = 0;
+         for (int64_t iq1 = 0; iq1 < neq1; ++iq1) {
+-            n_items += neq2 * (n_kv[iq1] < 512 ? 1 : nth);
++            n_items += n_head_job * (n_kv[iq1] < 512 ? 1 : nth);
+         }
+ 
+         if (ith == 0) {
+@@ -9536,12 +10071,16 @@ static void ggml_compute_forward_flash_attn_ext_f16(
+         for (int64_t item = ith; item < n_items; item = ggml_threadpool_chunk_add(params->threadpool, 1)) {
+             int64_t iq1 = 0;
+             int64_t rest = item;
+-            while (rest >= neq2 * (n_kv[iq1] < 512 ? 1 : nth)) {
+-                rest -= neq2 * (n_kv[iq1] < 512 ? 1 : nth);
++            while (rest >= n_head_job * (n_kv[iq1] < 512 ? 1 : nth)) {
++                rest -= n_head_job * (n_kv[iq1] < 512 ? 1 : nth);
+                 ++iq1;
+             }
+             if (n_kv[iq1] < 512) {
+-                ggml_compute_forward_flash_attn_ext_f16_one_chunk(params, dst, iq1 + neq1*rest, iq1 + neq1*rest + 1, 0, nek1, nullptr, 0);
++                if (group) {
++                    ggml_compute_forward_flash_attn_ext_f16_group(dst, scratch_g, 0, rest, iq1, 1, 0, nek1, nullptr, 0);
++                } else {
++                    ggml_compute_forward_flash_attn_ext_f16_one_chunk(params, dst, iq1 + neq1*rest, iq1 + neq1*rest + 1, 0, nek1, nullptr, 0);
++                }
+                 continue;
+             }
+ 
+@@ -9552,7 +10091,18 @@ static void ggml_compute_forward_flash_attn_ext_f16(
+             const int64_t ic_end     = std::min(ic_start + chunk_size, n_kv[iq1]);
+             float * const row_partials = partials_base + iq1*neq2*nth*partial_size;
+ 
+-            if (ic_start < n_kv[iq1]) {
++            if (group) {
++                if (ic_start < n_kv[iq1]) {
++                    ggml_compute_forward_flash_attn_ext_f16_group(dst, scratch_g, 0, h, iq1, 1, ic_start, ic_end,
++                            row_partials + c*partial_size, nth*partial_size);
++                } else {
++                    for (int64_t g = 0; g < G; ++g) {
++                        float * p = row_partials + ((h*G + g)*nth + c)*partial_size;
++                        p[0] = -INFINITY;
++                        p[1] = 0.0f;
++                    }
++                }
++            } else if (ic_start < n_kv[iq1]) {
+                 ggml_compute_forward_flash_attn_ext_f16_one_chunk(params, dst, iq1 + neq1*h, iq1 + neq1*h + 1, ic_start, ic_end,
+                         row_partials + c*partial_size, nth*partial_size);
+             } else {
+@@ -9647,6 +10197,39 @@ static void ggml_compute_forward_flash_attn_ext_f16(
+ #endif
+         use_tiled &= (DV % f32_epr == 0);
+ #endif
++        if (!use_tiled && neq1 >= 2 && ggml_flash_attn_ext_group_ok(params, dst)) {
++            // the work unit is a KV head x a block of pb positions; pb minimizes the estimate "units per thread x (queries + K/V reads)"
++            const int64_t G  = neq2/nek2;
++            int64_t       pb = 1;
++            for (int64_t p = 1, best = INT64_MAX; p <= neq1 && p*G <= FA_GROUP_MAXQ; ++p) {
++                const int64_t units = nek2*neq3*((neq1 + p - 1)/p);
++                const int64_t cost  = ((units + nth - 1)/nth)*(G*p + 4);
++                if ((units >= nth || p == 1) && cost < best) {
++                    best = cost;
++                    pb   = p;
++                }
++            }
++            const int64_t nblk    = (neq1 + pb - 1)/pb;
++            const int64_t n_units = nek2*neq3*nblk;
++            const size_t  stride  = GGML_FA_TILE_Q*DK + 2*GGML_FA_TILE_Q*GGML_FA_TILE_KV + GGML_FA_TILE_Q*DV + GGML_FA_TILE_KV*DV + GGML_FA_TILE_KV*DK;
++            GGML_ASSERT(ggml_flash_attn_ext_group_scratch(G*pb, DK, DV) <= (int64_t) stride);
++            float * scratch_g = (float *) params->wdata + ith*stride;
++
++            for (int64_t u = ith; u < n_units; u = ggml_threadpool_chunk_add(params->threadpool, 1)) {
++                const int64_t iq3 = u/(nek2*nblk);
++                const int64_t hk  = (u/nblk) % nek2;
++                const int64_t j0  = (u % nblk)*pb;
++                ggml_compute_forward_flash_attn_ext_f16_group(dst, scratch_g, iq3, hk, j0, std::min(pb, neq1 - j0), 0, nek1, nullptr, 0);
++            }
++            return;
++        }
++
++#if defined(__ARM_NEON) && defined(__aarch64__) && !defined(__ARM_FEATURE_SVE)
++        if (use_tiled && ggml_compute_forward_flash_attn_ext_f16_neon(params, dst)) {
++            return;
++        }
++#endif
++
+         int current_chunk = ith;
+ 
+         while (current_chunk < nchunk) {
+diff --git a/ggml/src/ggml-cpu/repack.cpp b/ggml/src/ggml-cpu/repack.cpp
+index 2632ae3a063c40c81438c7e8ab992e5903481d86..050138104c02eacbf1a4c1b465b566aab5d9b64f 100644
+--- a/ggml/src/ggml-cpu/repack.cpp
++++ b/ggml/src/ggml-cpu/repack.cpp
+@@ -14,6 +14,7 @@
+ #include <cmath>
+ #include <cstring>
+ #include <cassert>
++#include <type_traits>
+ #include <cstdio>  // for GGML_ASSERT
+ 
+ #include "repack.h"
+@@ -4560,6 +4561,10 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PAR
+             case GGML_OP_MUL_MAT:
+                 {
+                     size = ggml_row_size(PARAM_TYPE, ggml_nelements(op->src[1]));
++                    if (use_p8(op)) {
++                        // rows up to a multiple of 8 and the buffer of an incomplete group of four
++                        size = ggml_row_size(PARAM_TYPE, op->src[1]->ne[0]) * GGML_PAD(op->src[1]->ne[1], 8) + 4 * op->src[1]->ne[0] * sizeof(float);
++                    }
+                     return true;
+                 }
+             case GGML_OP_MUL_MAT_ID:
+@@ -4598,6 +4603,20 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PAR
+         return false;
+     }
+ 
++    // q4_0 4x4 from 5 rows: panels of 8 rows by the kernel scheduled for the in-order A55 (ggml_gemm_q4_0_4x4_q8_0_p8);
++    // decode and 1-4 rows (MTP verification step) take the previous path
++    static bool use_p8(const ggml_tensor * op) {
++#ifdef GGML_REPACK_Q4_0_P8
++        if constexpr (std::is_same_v<BLOC_TYPE, block_q4_0> && INTER_SIZE == 4 && NB_COLS == 4 && PARAM_TYPE == GGML_TYPE_Q8_0) {
++            const ggml_tensor * src1 = op->src[1];
++            return op->op == GGML_OP_MUL_MAT && src1->ne[1] > 4 && src1->ne[2] == 1 && src1->ne[3] == 1 &&
++                   src1->nb[1] == src1->ne[0] * sizeof(float);
++        }
++#endif
++        GGML_UNUSED(op);
++        return false;
++    }
++
+     void forward_mul_mat_one_chunk(ggml_compute_params * params,
+                                    ggml_tensor *         op,
+                                    int64_t               src0_start,
+@@ -4634,6 +4653,31 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PAR
+ 
+         GGML_ASSERT(src1_ptr + src1_col_stride * nrows <= (const char *) params->wdata + params->wsize);
+ 
++#ifdef GGML_REPACK_Q4_0_P8
++        if (use_p8(op)) {
++            // panels of 8 rows (an incomplete one from 5 rows: zero-padded, only the real rows are written); K is cut into
++            // slices of up to 20 blocks so that the activation panel stays in L1; the remaining 1-4 rows use the previous gemm kernel.
++            // The summation order is that of gemm/gemv: the result is bitwise the same
++            const int     nb      = ne00 / QK8_0;
++            const int     nslices = (nb + 19) / 20;
++            const int     per     = (nb + nslices - 1) / nslices;
++            const int64_t rem     = nrows % 8;
++            const int64_t n8      = rem >= 5 ? nrows : nrows - rem;
++            const char *  b       = src0_ptr + src0_start * nb01;
++            for (int64_t r0 = 0; r0 < n8; r0 += 8) {
++                for (int kb0 = 0; kb0 < nb; kb0 += per) {
++                    ggml_gemm_q4_0_4x4_q8_0_p8(nb, kb0, std::min(per, nb - kb0), (float *) (dst_ptr + r0 * nb1) + src0_start, nb1 / nb0,
++                                               b, src1_ptr + r0 * src1_col_stride, (int) std::min<int64_t>(8, n8 - r0), (int) ncols, kb0 > 0);
++                }
++            }
++            if (n8 < nrows) {
++                gemm<BLOC_TYPE, INTER_SIZE, NB_COLS, PARAM_TYPE>(ne00, (float *) (dst_ptr + n8 * nb1) + src0_start, nb1 / nb0, b,
++                                                                 src1_ptr + n8 * src1_col_stride, (int) (nrows - n8), ncols);
++            }
++            return;
++        }
++#endif
++
+         // If there are more than three rows in src1, use gemm; otherwise, use gemv.
+         if (nrows > 3) {
+             gemm<BLOC_TYPE, INTER_SIZE, NB_COLS, PARAM_TYPE>(ne00, (float *) (dst_ptr) + src0_start, nb1 / nb0,
+@@ -4690,16 +4734,30 @@ template <typename BLOC_TYPE, int64_t INTER_SIZE, int64_t NB_COLS, ggml_type PAR
+         // INFO: Quantization is done in planes to avoid extra complexity in chunking.
+         // Flattening dimensions not multiple of INTER_SIZE would require extra handling depending on how
+         // the planes are broadcast.
++        const bool p8 = use_p8(op);
+         for (int64_t i12 = 0; i12 < ne12; i12++) {
+             char * data_ptr  = (char *) src1->data + i12 * nb12;
+             char * wdata_ptr = wdata + i12 * nbw2;
+ 
++            if (p8 && ith == nth - 1) {
++                // an incomplete group of four goes through a zero-filled buffer (in the same format as full ones), then zeros up to 8 rows
++                const int64_t n4 = ne11 - ne11 % 4;
++                const int64_t n8 = GGML_PAD(ne11, 8);
++                if (n4 < ne11) {
++                    float * tmp = (float *) (wdata + n8 * nbw1);
++                    memcpy(tmp, data_ptr + n4 * nb11, (ne11 - n4) * ne10 * sizeof(float));
++                    memset(tmp + (ne11 - n4) * ne10, 0, (n4 + 4 - ne11) * ne10 * sizeof(float));
++                    ggml_quantize_mat_t<INTER_SIZE, PARAM_TYPE>(tmp, (void *) (wdata_ptr + n4 * nbw1), 4, ne10);
++                }
++                memset(wdata_ptr + GGML_PAD(ne11, 4) * nbw1, 0, (n8 - GGML_PAD(ne11, 4)) * nbw1);
++            }
++
+             for (int64_t i11 = ith * 4; i11 < ne11 - ne11 % 4; i11 += nth * 4) {
+                 ggml_quantize_mat_t<INTER_SIZE, PARAM_TYPE>((float *) (data_ptr + i11 * nb11),
+                                                             (void *) (wdata_ptr + i11 * nbw1), 4, ne10);
+             }
+ 
+-            const int64_t i11_processed = ne11 - ne11 % 4;
++            const int64_t i11_processed = p8 ? ne11 : ne11 - ne11 % 4;
+             for (int64_t i11 = i11_processed + ith; i11 < ne11; i11 += nth) {
+                 from_float((float *) (data_ptr + i11 * nb11), (void *) (wdata_ptr + i11 * nbw1), ne10);
+             }
+diff --git a/ggml/src/ggml-cpu/repack.h b/ggml/src/ggml-cpu/repack.h
+index fc6715c39ce93fd012591de1ab652b27414ae887..d478ea18342323e1b90037fb48de68dd7aec5cc3 100644
+--- a/ggml/src/ggml-cpu/repack.h
++++ b/ggml/src/ggml-cpu/repack.h
+@@ -167,6 +167,10 @@ void ggml_gemv_q8_0_4x8_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const vo
+ void ggml_gemm_q1_0_4x4_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc);
+ void ggml_gemm_q1_0_4x8_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc);
+ void ggml_gemm_q4_0_4x4_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc);
++#if defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && !defined(_MSC_VER)
++#define GGML_REPACK_Q4_0_P8 1
++void ggml_gemm_q4_0_4x4_q8_0_p8(int nb, int kb0, int nbs, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nvalid, int nc, int acc);
++#endif
+ void ggml_gemm_q4_0_4x8_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc);
+ void ggml_gemm_q4_0_8x8_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc);
+ void ggml_gemm_q2_K_8x8_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc);
+diff --git a/ggml/src/ggml-cpu/simd-gemm.h b/ggml/src/ggml-cpu/simd-gemm.h
+index 4b9396d540664e5925c7ea46eb707e83ce60d900..9076cc3d85a4fa7882154f741a955bb6c3b0515a 100644
+--- a/ggml/src/ggml-cpu/simd-gemm.h
++++ b/ggml/src/ggml-cpu/simd-gemm.h
+@@ -9,7 +9,7 @@
+ 
+ // TODO: untested on avx512
+ // These are in units of GGML_F32_EPR
+-#if defined(__AVX512F__) || defined (__ARM_NEON__)
++#if defined(__AVX512F__) || defined(__ARM_NEON)
+     static constexpr int GEMM_RM = 4;
+     static constexpr int GEMM_RN = 4; // 16+4+1 = 25/32
+ #elif defined(__AVX2__) || defined(__AVX__)

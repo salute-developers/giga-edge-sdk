@@ -1,0 +1,18 @@
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Subject: [PATCH] libarchive: install headers under include/archive
+
+Keeps the public headers in their own directory of the install prefix.
+---
+diff --git a/libarchive/CMakeLists.txt b/libarchive/CMakeLists.txt
+index e1d76a5198d38a89ab8fe8d8d3a4193fa938f4f5..5fad8a3e2d3536d02dc37222c9a35813a500d4ac 100644
+--- a/libarchive/CMakeLists.txt
++++ b/libarchive/CMakeLists.txt
+@@ -260,7 +260,7 @@ IF(ENABLE_INSTALL)
+           LIBRARY DESTINATION lib
+           ARCHIVE DESTINATION lib)
+   INSTALL_MAN(${libarchive_MANS})
+-  INSTALL(FILES ${include_HEADERS} DESTINATION include)
++  INSTALL(FILES ${include_HEADERS} DESTINATION include/archive)
+ ENDIF()
+ 
+ add_subdirectory(test)

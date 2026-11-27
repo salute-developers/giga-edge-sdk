@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="270" viewBox="0 0 760 270" role="img" aria-labelledby="title">
+  <title id="title">Edges are names: an output and an input with the same edge name are connected, an edge that no node produces is a graph input</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .green{fill:#1a7f37}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="269" rx="12"/>
+
+  <rect class="chip" x="24" y="24" width="300" height="222" rx="8"/>
+  <text class="mono small" x="40" y="52" xml:space="preserve">nodes:</text>
+  <text class="mono small" x="40" y="73" xml:space="preserve">  - name: user_query</text>
+  <text class="mono small note" x="40" y="94" xml:space="preserve">    # type, params ...</text>
+  <text class="mono small" x="40" y="115" xml:space="preserve">    inputs:  {text: <tspan class="green b">text</tspan>}</text>
+  <text class="mono small" x="40" y="136" xml:space="preserve">    outputs: {user_query: <tspan class="green b">query</tspan>}</text>
+  <text class="mono small" x="40" y="157" xml:space="preserve">  - name: request</text>
+  <text class="mono small note" x="40" y="178" xml:space="preserve">    # type, params ...</text>
+  <text class="mono small" x="40" y="199" xml:space="preserve">    inputs:  {user_query: <tspan class="green b">query</tspan>}</text>
+  <text class="mono small" x="40" y="220" xml:space="preserve">    outputs: {request: <tspan class="green b">request</tspan>}</text>
+
+  <rect class="val" x="412" y="28" width="56" height="24" rx="12"/>
+  <text class="mono small b mid green" x="440" y="44">text</text>
+  <text class="note small" x="530" y="38">no node produces it: a graph input,</text>
+  <text class="note small" x="530" y="52">the host pushes values into it</text>
+  <path class="edge" d="M440 52V70"/>
+  <rect class="node" x="378" y="72" width="124" height="36" rx="8"/>
+  <text class="mono b mid" x="440" y="94.5">user_query</text>
+  <path class="edge" d="M440 108V126"/>
+  <rect class="val" x="410" y="128" width="60" height="24" rx="12"/>
+  <text class="mono small b mid green" x="440" y="144">query</text>
+  <text class="note small" x="530" y="138">the same name in an output and</text>
+  <text class="note small" x="530" y="152">in an input: they are connected</text>
+  <path class="edge" d="M440 152V170"/>
+  <rect class="node" x="378" y="172" width="124" height="36" rx="8"/>
+  <text class="mono b mid" x="440" y="194.5">request</text>
+  <path class="edge" d="M440 208V226"/>
+  <rect class="val" x="404" y="228" width="72" height="24" rx="12"/>
+  <text class="mono small b mid green" x="440" y="244">request</text>
+  <text class="note small" x="530" y="238">the host can subscribe</text>
+  <text class="note small" x="530" y="252">to any edge</text>
+</svg>

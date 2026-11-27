@@ -1,0 +1,121 @@
+tensorflow/lite: XNNPACK in the installed tflite package, without the default delegate.
+
+With TFLITE_ENABLE_XNNPACK=ON tflite 2.20 builds XNNPACK itself (add_subdirectory) and links it to tensorflow-lite
+PUBLIC, but does not put it into the export set: with TFLITE_ENABLE_INSTALL the installed package cannot be built.
+The targets are collected by walking the XNNPACK and pthreadpool directories, to survive a bump of XNNPACK.
+
+Also:
+- cpuinfo: XNNPACK builds its own unless a target named cpuinfo exists — it is made an ALIAS of the found package
+  (cpuinfo::cpuinfo): one copy for ruy, XNNPACK and onnxruntime;
+- flatc: a native tflite build overrides FLATBUFFERS_FLATC_EXECUTABLE with its own flatc, which does not exist when
+  FlatBuffers is found as a package (weight_cache_schema.fbs of the XNNPACK delegate): a passed one is respected;
+- TFLITE_XNNPACK_DEFAULT_DELEGATE (ON by default, as upstream): OFF does not set TFLITE_BUILD_WITH_XNNPACK_DELEGATE —
+  XNNPACK is built, but the interpreter does not apply it by itself; the caller creates the delegate
+  (TfLiteXNNPackDelegateCreate), for this xnnpack_delegate.h is installed;
+- paths: the include directories of the XNNPACK/pthreadpool/fxdiv targets point into the sources (downloads), they
+  are not in the installed package (BUILD_INTERFACE); the consumer needs only xnnpack_delegate.h.
+
+diff --git a/tensorflow/lite/CMakeLists.txt b/tensorflow/lite/CMakeLists.txt
+index 1a21211..5ab13cc 100644
+--- a/tensorflow/lite/CMakeLists.txt
++++ b/tensorflow/lite/CMakeLists.txt
+@@ -73,6 +73,9 @@ option(TFLITE_ENABLE_MMAP "Enable MMAP (unsupported on Windows)" ON)
+ option(TFLITE_ENABLE_GPU "Enable GPU" OFF)
+ option(TFLITE_ENABLE_METAL "Enable Metal delegate (iOS only)" OFF)
+ option(TFLITE_ENABLE_XNNPACK "Enable XNNPACK backend" ON)
++cmake_dependent_option(TFLITE_XNNPACK_DEFAULT_DELEGATE
++  "Apply the XNNPACK delegate by default (otherwise only explicitly, via TfLiteXNNPackDelegateCreate)" ON
++  "TFLITE_ENABLE_XNNPACK" OFF)
+ option(TFLITE_ENABLE_EXTERNAL_DELEGATE "Enable External Delegate backend" ON)
+ 
+ option(TFLITE_KERNEL_TEST "Enable tflite kernel unit test" OFF)
+@@ -96,7 +99,7 @@ if(${CMAKE_CROSSCOMPILING})
+     message(STATUS "Pre-built 'flatc' compiler for cross-compilation purposes found: ${FLATC_BIN}")
+     set(FLATBUFFERS_FLATC_EXECUTABLE "${FLATC_BIN}")
+   endif()
+-else()
++elseif(NOT FLATBUFFERS_FLATC_EXECUTABLE)
+   set(FLATBUFFERS_FLATC_EXECUTABLE "${CMAKE_BINARY_DIR}/flatbuffers-flatc/bin/flatc")
+   set(FLATC_TARGET "flatbuffers-flatc")
+ endif()
+@@ -174,6 +177,10 @@ if (NOT CMAKE_SYSTEM_PROCESSOR OR CMAKE_SYSTEM_PROCESSOR MATCHES "x86")
+   list(APPEND TFLITE_TARGET_DEPENDENCIES NEON_2_SSE::NEON_2_SSE)
+ endif()
+ find_package(cpuinfo REQUIRED)  #CPUINFO is used by XNNPACK and RUY library
++# XNNPACK builds its own cpuinfo unless a target named cpuinfo exists: reuse the found package.
++if(TFLITE_ENABLE_XNNPACK AND TARGET cpuinfo::cpuinfo AND NOT TARGET cpuinfo)
++  add_library(cpuinfo ALIAS cpuinfo::cpuinfo)
++endif()
+ find_package(ml_dtypes REQUIRED)
+ # kernels/ include fp16/fp16.h unconditionally, not only with GPU/NNAPI/XNNPACK
+ find_package(fp16_headers REQUIRED)
+@@ -560,7 +567,9 @@ if(TFLITE_ENABLE_XNNPACK)
+     xnnpack-delegate
+     XNNPACK
+   )
+-  list(APPEND TFLITE_TARGET_PUBLIC_OPTIONS "-DTFLITE_BUILD_WITH_XNNPACK_DELEGATE")
++  if(TFLITE_XNNPACK_DEFAULT_DELEGATE)
++    list(APPEND TFLITE_TARGET_PUBLIC_OPTIONS "-DTFLITE_BUILD_WITH_XNNPACK_DELEGATE")
++  endif()
+   list(APPEND TFLITE_TARGET_PUBLIC_OPTIONS "-DXNNPACK_DELEGATE_ENABLE_QS8")
+   list(APPEND TFLITE_TARGET_PUBLIC_OPTIONS "-DXNNPACK_DELEGATE_ENABLE_QU8")
+   list(APPEND TFLITE_TARGET_PUBLIC_OPTIONS "-DXNNPACK_DELEGATE_USE_LATEST_OPS")
+@@ -769,6 +778,58 @@ if(TFLITE_ENABLE_INSTALL)
+     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+   )
+ 
++  if(TFLITE_ENABLE_XNNPACK)
++    # tensorflow-lite links XNNPACK and its dependencies built in this tree: install them into the
++    # same export set, collecting the library targets of their directories recursively.
++    function(_tflite_collect_library_targets dir out_var)
++      get_property(_targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
++      get_property(_subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
++      set(_result)
++      foreach(_target IN LISTS _targets)
++        get_target_property(_type ${_target} TYPE)
++        if(_type MATCHES "^(STATIC_LIBRARY|OBJECT_LIBRARY|INTERFACE_LIBRARY)$")
++          list(APPEND _result ${_target})
++        endif()
++      endforeach()
++      foreach(_subdir IN LISTS _subdirs)
++        _tflite_collect_library_targets("${_subdir}" _sub_result)
++        list(APPEND _result ${_sub_result})
++      endforeach()
++      set(${out_var} ${_result} PARENT_SCOPE)
++    endfunction()
++    _tflite_collect_library_targets("${TFLITE_SOURCE_DIR}/tools/cmake/modules/xnnpack" _xnnpack_targets)
++    if(TARGET pthreadpool AND NOT SYSTEM_PTHREADPOOL)
++      _tflite_collect_library_targets("${PTHREADPOOL_SOURCE_DIR}" _pthreadpool_targets)
++      list(APPEND _xnnpack_targets ${_pthreadpool_targets})
++    endif()
++    # Their usage requirements point into the source trees (downloads): keep them for this build only,
++    # consumers of the installed package need just tensorflow/lite/delegates/xnnpack/xnnpack_delegate.h.
++    foreach(_target IN LISTS _xnnpack_targets)
++      get_target_property(_dirs ${_target} INTERFACE_INCLUDE_DIRECTORIES)
++      if(_dirs)
++        set(_build_dirs)
++        foreach(_dir IN LISTS _dirs)
++          if(_dir MATCHES "^\\$<")
++            list(APPEND _build_dirs "${_dir}")
++          else()
++            list(APPEND _build_dirs "$<BUILD_INTERFACE:${_dir}>")
++          endif()
++        endforeach()
++        set_target_properties(${_target} PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_build_dirs}")
++      endif()
++    endforeach()
++    install(
++      TARGETS xnnpack-delegate ${_xnnpack_targets}
++      EXPORT ${PROJECT_NAME}Targets
++      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
++      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
++    )
++    install(
++      FILES ${TFLITE_SOURCE_DIR}/delegates/xnnpack/xnnpack_delegate.h
++      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/tensorflow/lite/delegates/xnnpack"
++    )
++  endif()
++
+   foreach(hdr ${_ALL_TFLITE_HDRS})
+     get_filename_component(dir ${hdr} DIRECTORY)
+     file(RELATIVE_PATH dir ${CMAKE_CURRENT_SOURCE_DIR} ${dir})

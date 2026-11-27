@@ -1,0 +1,16 @@
+Backport of the upstream commit that is not in 3050076 (it is on master later):
+  f4496dc0807d9a29a7ba0d170b49f7ca9b306a9f Prevent stack corruption with parallelized use.
+
+diff --git a/kiss_fft.c b/kiss_fft.c
+index af2f695..5614838 100644
+--- a/kiss_fft.c
++++ b/kiss_fft.c
+@@ -246,7 +246,7 @@ void kf_work(
+ #ifdef _OPENMP
+     // use openmp extensions at the 
+     // top-level (not recursive)
+-    if (fstride==1 && p<=5)
++    if (fstride==1 && p<=5 && m!=1)
+     {
+         int k;
+ 

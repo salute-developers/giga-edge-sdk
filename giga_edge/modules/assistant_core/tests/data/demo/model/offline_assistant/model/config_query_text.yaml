@@ -1,0 +1,8 @@
+version: offline_assistant.query_text.oss.1.0.0
+nodes:
+  - name: query_text
+    type: coalesce_text
+    inputs:
+      second: fallback
+    outputs:
+      text: text

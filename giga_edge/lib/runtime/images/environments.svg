@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="275" viewBox="0 0 760 275" role="img" aria-labelledby="title">
+  <title id="title">Several nodes share one environment by naming it in their params</title>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#8250df"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .env{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .use{fill:none;stroke:#8250df;stroke-width:1.5;stroke-dasharray:3 3;marker-end:url(#ar)}
+    .purple{fill:#8250df}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="274" rx="12"/>
+
+  <rect class="frame" x="24" y="24" width="712" height="104" rx="10"/>
+  <text class="note" x="38" y="45">nodes</text>
+
+  <rect class="node" x="36" y="56" width="160" height="52" rx="8"/>
+  <text class="mono b mid" x="116" y="78">node_a</text>
+  <text class="mono mid purple" x="116" y="96" style="font-size:10px">environment: shared_pool</text>
+  <rect class="node" x="208" y="56" width="160" height="52" rx="8"/>
+  <text class="mono b mid" x="288" y="78">node_b</text>
+  <text class="mono mid purple" x="288" y="96" style="font-size:10px">environment: shared_pool</text>
+  <rect class="node" x="392" y="56" width="160" height="52" rx="8"/>
+  <text class="mono b mid" x="472" y="78">node_c</text>
+  <text class="mono mid purple" x="472" y="96" style="font-size:10px">environment: onnx_env</text>
+  <rect class="node" x="564" y="56" width="160" height="52" rx="8"/>
+  <text class="mono b mid" x="644" y="78">node_d</text>
+  <text class="mono mid purple" x="644" y="96" style="font-size:10px">environment: onnx_env</text>
+
+  <path class="use" d="M116 108C116 150 170 140 170 178"/>
+  <path class="use" d="M288 108C288 150 238 140 238 178"/>
+  <path class="use" d="M472 108C472 150 522 140 522 178"/>
+  <path class="use" d="M644 108C644 150 590 140 590 178"/>
+
+  <rect class="env" x="94" y="180" width="220" height="50" rx="10"/>
+  <text class="mono b mid" x="204" y="202">shared_pool</text>
+  <text class="mono note small mid" x="204" y="219">type: thread_pool</text>
+  <rect class="env" x="446" y="180" width="220" height="50" rx="10"/>
+  <text class="mono b mid" x="556" y="202">onnx_env</text>
+  <text class="mono note small mid" x="556" y="219">type: onnx</text>
+
+  <text class="note mid" x="380" y="258">An environment is created once and shared by every node that names it.</text>
+</svg>

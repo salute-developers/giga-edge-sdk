@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="282" viewBox="0 0 760 282" role="img" aria-labelledby="title">
+  <title id="title">A voice assistant as one graph: hotword, speech to text, LLM dialogue with tool calls over MCP, speech output</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M10 0L0 5L10 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .panel{fill:#fff;stroke:#d0d7de}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .tool{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .purple{fill:#8250df}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .both{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a);marker-start:url(#b)}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="281" rx="12"/>
+
+  <rect class="frame" x="100" y="26" width="562" height="212" rx="10"/>
+  <text class="note" x="114" y="46">one graph, described in a YAML config</text>
+
+  <rect class="host" x="24" y="88" width="64" height="26" rx="13"/>
+  <text class="small mid" x="56" y="105">mic</text>
+  <rect class="node" x="108" y="62" width="126" height="78" rx="10"/>
+  <text class="b mid" x="171" y="86">hotword</text>
+  <text class="mono small mid" x="171" y="106">spotter</text>
+  <text class="note small mid" x="171" y="124">TensorFlow Lite</text>
+  <rect class="node" x="248" y="62" width="126" height="78" rx="10"/>
+  <text class="b mid" x="311" y="86">speech to text</text>
+  <text class="mono small mid" x="311" y="106">model</text>
+  <text class="note small mid" x="311" y="124">ONNX Runtime</text>
+  <rect class="node" x="388" y="62" width="126" height="78" rx="10"/>
+  <text class="b mid" x="451" y="86">LLM dialogue</text>
+  <text class="mono small mid" x="451" y="106">llm</text>
+  <text class="note small mid" x="451" y="124">llama.cpp</text>
+  <rect class="node" x="528" y="62" width="126" height="78" rx="10"/>
+  <text class="b mid" x="591" y="86">speech output</text>
+  <text class="mono small mid" x="591" y="106">tts</text>
+  <path class="edge" d="M88 101H106"/>
+  <path class="edge" d="M234 101H246"/>
+  <path class="edge" d="M374 101H386"/>
+  <path class="edge" d="M514 101H526"/>
+  <path class="edge" d="M654 101H672"/>
+  <rect class="host" x="674" y="88" width="64" height="26" rx="13"/>
+  <text class="small mid" x="706" y="105">speaker</text>
+
+  <path class="both" d="M451 144V178"/>
+  <rect class="tool" x="388" y="182" width="126" height="44" rx="10"/>
+  <text class="b mid" x="451" y="201">tool calls</text>
+  <text class="mono small mid purple" x="451" y="218">mcp</text>
+  <path class="both" d="M518 204H670"/>
+  <text class="note small mid" x="594" y="196">MCP</text>
+  <rect class="host" x="674" y="182" width="64" height="44" rx="8"/>
+  <text class="small mid" x="706" y="201">Home</text>
+  <text class="small mid" x="706" y="216">Assistant</text>
+
+  <text class="note mid" x="380" y="264">Everything inside the frame runs on the device; the demo assistant reaches only Home Assistant over the network.</text>
+</svg>

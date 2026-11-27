@@ -1,0 +1,1461 @@
+# Readings of words the rules read wrong: Latin words and brands, abbreviations. Tab-separated: the word in lower case
+# (Latin or Cyrillic, a hyphenated word as one: "wi-fi"), its reading in Russian letters with '+' before the stressed
+# vowel. Other Latin words are transliterated, capitals of up to three letters are read letter by letter.
+# Home and devices
+wi-fi	вай-ф+ай
+wifi	вайф+ай
+bluetooth	блют+ус
+zigbee	з+игби
+z-wave	зи-в+эйв
+smart	смарт
+home	х+оум
+hub	хаб
+router	р+оутер
+led	лэд
+lcd	эл-си-д+и
+www	три дабл-ю
+oled	ол+эд
+usb	ю-эс-б+и
+usb-c	ю-эс-би-с+и
+hdmi	эйч-ди-эм-+ай
+co	цэ-+о
+ppm	пи-пи-+эм
+uv	ю-в+и
+online	онл+айн
+offline	офл+айн
+update	апд+эйт
+app	апп
+user	+юзэр
+bot	бот
+chat	чат
+ok	ок+ей
+okay	ок+ей
+wow	в+ау
+email	и-м+эйл
+e-mail	и-м+эйл
+mail	м+эйл
+web	вэб
+example	экз+ампл
+info	+инфо
+site	сайт
+cloud	кл+ауд
+server	с+ервер
+download	даунл+оуд
+play	плэй
+pause	п+ауза
+stop	стоп
+on	он
+off	офф
+auto	+авто
+eco	+эко
+turbo	т+урбо
+max	макс
+mini	м+ини
+pro	про
+plus	плюс
+ultra	+ультра
+lite	лайт
+light	лайт
+night	найт
+mode	мод
+power	п+ауэр
+timer	т+аймэр
+# Services and programs
+google	г+угл
+youtube	ють+юб
+whatsapp	вотс+ап
+telegram	телегр+ам
+viber	в+айбер
+skype	скайп
+zoom	зум
+discord	диск+орд
+spotify	спот+ифай
+netflix	н+этфликс
+tiktok	тикт+ок
+instagram	инстагр+ам
+facebook	фейсб+ук
+twitter	тв+иттер
+yandex	+яндекс
+alexa	ал+екса
+siri	с+ири
+chrome	хром
+firefox	файерф+окс
+windows	в+индоус
+linux	л+инукс
+android	андр+оид
+ios	ай-оу-+эс
+macos	мак-оу-+эс
+office	+офис
+word	ворд
+excel	+эксель
+outlook	+аутлук
+chatgpt	чат-джи-пи-т+и
+gpt	джи-пи-т+и
+openai	+опен-эй-ай
+# Brands
+apple	+эпл
+iphone	айф+он
+ipad	айп+ад
+airpods	+эйрподс
+macbook	м+акбук
+watch	вотч
+samsung	с+амсунг
+galaxy	г+элакси
+xiaomi	сяом+и
+redmi	р+эдми
+huawei	хуав+эй
+honor	х+онор
+sony	с+они
+playstation	плэйст+эйшн
+xbox	иксб+окс
+nintendo	нинт+эндо
+lg	эл-дж+и
+philips	ф+илипс
+bosch	бош
+dyson	д+айсон
+tefal	теф+аль
+intel	+интэл
+amd	эй-эм-д+и
+nvidia	энв+идиа
+core	кор
+tesla	т+есла
+toyota	той+ота
+nike	н+айк
+adidas	адид+ас
+ikea	ик+еа
+lego	л+его
+pay	пэй
+# Words of titles and names
+the	зэ
+and	энд
+of	оф
+in	ин
+to	ту
+is	из
+it	ит
+you	ю
+your	ёр
+me	ми
+my	май
+we	ви
+be	би
+for	фор
+with	уиз
+love	лав
+life	лайф
+time	тайм
+day	дэй
+one	ван
+world	ворлд
+hello	хэл+оу
+heart	харт
+dance	дэнс
+girl	гёрл
+boy	бой
+baby	б+эйби
+yellow	й+еллоу
+believer	бил+ивэр
+blinding	бл+айндинг
+lights	лайтс
+bohemian	бох+эмиэн
+rhapsody	р+апсоди
+feat	фит
+remix	рем+икс
+live	лайв
+radio	р+адио
+music	мь+юзик
+song	сонг
+rock	рок
+pop	поп
+jazz	джаз
+deadline	дэдл+айн
+fun	фан
+beatles	б+итлз
+queen	квин
+coldplay	колдпл+эй
+weeknd	уик+энд
+imagine	им+эджин
+dragons	др+эгонс
+rammstein	рамшт+айн
+du	ду
+hast	хаст
+sonne	з+оннэ
+miyagi	ми+яги
+andy	+энди
+panda	п+анда
+pharaoh	фара+он
+rakhim	рах+им
+eminem	эмин+эм
+madonna	мад+онна
+abba	+абба
+# Abbreviations read not by the rules
+мкад	мк+ад
+ооо	о-о-+о
+оао	о-а-+о
+зао	зэ-а-+о
+инн	и-эн-+эн
+вуз	вуз
+сша	сэ-шэ-+а
+aqara	ак+ара
+tuya	т+уя
+sonoff	с+онофф
+vk	вэ-к+а
+ozon	оз+он
+гибдд	ги-бэ-дэ-д+э
+снилс	снилс
+сплин	сплин
+# Names of artists, brands and technical words
+070 shake	+оу с+эвен +оу ш+эйк
+10age	т+энэйдж
+21 savage	тв+энти у+ан с+эвидж
+24kgoldn	тв+энти ф+ор к+эй г+олден
+2ne1	ту+эни у+ан
+2pac	туп+ак
+2pm	т+у пи-+эм
+2rbina 2rista	турб+ина тур+иста
+3d	тр+и д+э
+4g	чет+ыре дж+и
+4k	чет+ыре к+а
+50 cent	ф+ифти с+энт
+5g	п+ять дж+и
+5sta family	ф+айвста ф+эмили
+6ix9ine	с+икс н+айн
+8k	в+осемь к+а
+a tribe called quest	+э тр+айб к+олд кв+эст
+a-ha	+а х+а
+aac	эй-эй-с+и
+above & beyond	аб+ав +энд бий+онд
+ac/dc	эйс+и дис+и
+accept	акс+эпт
+ace of base	+эйс +оф б+эйс
+acer	+эйсер
+acoustic	ак+устик
+acura	ак+ура
+adele	ад+эль
+adobe	ад+оби
+aeg	а-э-г+э
+aerosmith	аэросм+ит
+aespa	+эспа
+airplay	эйрпл+эй
+airtag	эйрт+эг
+akai	ак+ай
+akcent	акс+ент
+akmal'	акм+аль
+akon	+эйкон
+alan walker	+алан в+окер
+alanis morissette	ал+анис морисс+етт
+alcatel	алкат+ель
+alesso	ал+ессо
+alex clare	+алекс кл+эр
+alexandra stan	алекс+андра ст+ан
+alfa romeo	+альфа ром+ео
+alice in chains	+элис +ин ч+ейнз
+alicia keys	ал+иша к+из
+alienware	+элиенвэр
+aliexpress	алиэкспр+есс
+alizee	ализ+э
+allj	элдж+эй
+alphaville	альфав+иль
+alt-j	+олт дж+эй
+alter bridge	+олтер бр+идж
+amazfit	ам+азфит
+amazon	+амазон
+amoled	амол+эд
+amy macdonald	+эми макд+ональд
+amy winehouse	+эми у+айнхаус
+anacondaz	анак+ондаз
+anastacia	анаст+эйша
+anderson .paak	+андерсон п+ак
+andrea bocelli	андр+еа боч+елли
+andro	+андро
+andy panda	+энди п+анда
+anivar	анив+ар
+anker	+анкер
+anna asti	+анна +асти
+annalisa	аннал+иза
+annie lennox	+энни л+еннокс
+aphex twin	+эйфекс тв+ин
+apocalyptica	апокал+иптика
+apple music	+эпл мь+юзик
+apple tv	+эпл ти-в+и
+aptx	+апт +икс
+aqua	+аква
+arc	+арк
+architects	+аркитектс
+arctic monkeys	+арктик м+анкиз
+ariana grande	ари+ана гр+анде
+ariston	арист+он
+armin van buuren	+армин в+ан б+юрен
+artik & asti	+артик +и +асти
+ashanti	аш+анти
+ashnikko	ашн+икко
+asking alexandria	+аскинг алекс+андрия
+asrock	+эсрок
+aston martin	+астон м+артин
+asus	+асус
+atb	эй-ти-б+и
+ateez	эйт+из
+atlant	атл+ант
+atlantic	атл+антик
+atomic kitten	ат+омик к+иттен
+audi	+ауди
+audio-technica	+аудио т+ехника
+aux	+аукс
+ava max	+эйва м+акс
+avicii	ав+ичи
+avito	ав+ито
+avril lavigne	авр+ил лав+ин
+azealia banks	аз+илия б+энкс
+baby keem	б+эйби к+им
+baby melo	б+эйби м+ело
+babymetal	б+эйби м+етал
+babymonster	б+эйби м+онстер
+backstreet boys	б+экстрит б+ойз
+bad boys blue	б+эд б+ойз бл+у
+bad bunny	б+эд б+анни
+ballu	бал+у
+baltimora	балтим+ора
+bang & olufsen	б+энг +энд +олуфсен
+basic boy	б+эйсик б+ой
+basshunter	б+эйсхантер
+bastille	баст+иль
+beat	б+ит
+bebe rexha	б+иби р+екса
+beck	б+эк
+beko	б+еко
+belinda carlisle	бел+инда карл+айл
+benny benassi	б+енни бен+асси
+benq	б+енкью
+benson boone	б+енсон б+ун
+bentley	б+ентли
+berlin	берл+ин
+beyonce	бей+онсе
+big baby tape	б+иг б+эйби т+ейп
+big pun	б+иг п+ан
+big russian boss	б+иг р+ашэн б+осс
+big sean	б+иг ш+он
+bigbang	б+иг б+энг
+billie eilish	б+илли +айлиш
+billy idol	б+илли +айдол
+billy joel	б+илли дж+оэл
+bit	б+ит
+bjork	бьёрк
+black	бл+эк
+black eyed peas	бл+эк +айд п+из
+black sabbath	бл+эк с+эббат
+black+decker	бл+эк +энд д+екер
+blackberry	бл+экберри
+blackpink	блэкп+инк
+blaupunkt	бл+аупункт
+blink-182	бл+инк ст+о в+осемьдесят дв+а
+blondie	бл+онди
+blu-ray	блю-р+эй
+blue	бл+у
+blur	блёр
+bmw	бэ-эм-в+э
+boa	б+оа
+boards of canada	б+ордс +оф к+энада
+bob dylan	б+об д+илан
+bob marley	б+об м+арли
+bon jovi	б+он дж+ови
+boney m.	б+они +эм
+bonnie tyler	б+онни т+айлер
+bonus	б+онус
+bootleg	бутл+ег
+boris brejcha	б+орис бр+ейха
+bork	б+орк
+bose	б+оуз
+boulevard depo	бульв+ар д+епо
+bowers & wilkins	б+ауэрс +энд у+илкинс
+boyz ii men	б+ойз т+у м+эн
+boyzone	б+ойзоун
+braun	бр+аун
+bring me the horizon	бр+инг м+и з+э хор+айзон
+bronski beat	бр+онски б+ит
+brother	бр+азер
+browser	бр+аузер
+bruce springsteen	бр+юс спр+ингстин
+bruno mars	бр+уно м+арс
+bryan adams	бр+айан +адамс
+bryan ferry	бр+айан ф+ерри
+bts	би-ти-+эс
+bugatti	буг+атти
+bullet for my valentine	б+уллет ф+ор м+ай в+алентайн
+bushido zho	буш+идо ж+о
+busta rhymes	б+аста р+аймс
+byd	би-уай-д+и
+calum scott	к+алум ск+отт
+calvin harris	к+элвин х+аррис
+camila cabello	кам+ила каб+ельо
+candy	к+анди
+canon	к+энон
+capital cities	к+эпитал с+итис
+cardi b	к+арди б+и
+carly rae jepsen	к+арли р+эй дж+эпсен
+caro emerald	к+аро +эмеральд
+carpenters	к+арпентерс
+casio	к+асио
+cat stevens	к+эт ст+ивенс
+cd	си-д+и
+celine dion	сел+ин ди+он
+central cee	с+ентрал с+и
+changan	чанг+ан
+charles aznavour	ш+арль азнав+ур
+charli xcx	ч+арли экс-си-+экс
+charlie puth	ч+арли п+ут
+cher	ш+эр
+chery	ч+ери
+cheryl	ш+эрил
+chevrolet	шэврол+е
+chicago	чик+аго
+childish gambino	ч+айлдиш гамб+ино
+chillout	чилл+аут
+chris brown	кр+ис бр+аун
+chris de burgh	кр+ис д+э б+ург
+chris isaak	кр+ис +айзек
+chris norman	кр+ис н+орман
+chris rea	кр+ис р+и
+christina aguilera	крист+ина агил+ера
+christina perri	крист+ина п+ерри
+chrysler	кр+айслер
+chuck berry	ч+ак б+ерри
+citroen	ситро+ен
+clean bandit	кл+ин б+эндит
+cliff richard	кл+ифф р+ичард
+co2	ц+э +о дв+а
+common	к+оммон
+conan gray	к+онан гр+эй
+cooler master	к+улер м+астер
+coolio	к+улио
+corsair	корс+ар
+cover	к+авер
+cpu	си-пи-+ю
+craig david	кр+эйг д+эвид
+cream soda	кр+им с+ода
+creative	кри+эйтив
+creed	кр+ид
+creedence clearwater revival	кр+иденс кл+ируотер рив+айвл
+culture club	к+алчер кл+аб
+cutting crew	к+аттинг кр+ю
+cypress hill	с+айпресс х+илл
+d-link	д+и л+инк
+dababy	даб+эйби
+dabro	дабр+о
+daddy yankee	д+эдди +янки
+daewoo	д+эу
+daft punk	д+афт п+анк
+dan balan	д+ан бал+ан
+dava	д+ава
+dave	д+эйв
+david bowie	д+эвид б+оуи
+david guetta	д+эвид г+етта
+dead blonde	д+эд бл+онд
+deadmau5	д+эдмаус
+dean martin	д+ин м+артин
+deep dish	д+ип д+иш
+deep purple	д+ип пёрпл
+def leppard	д+эф л+еппард
+deftones	д+эфтонс
+dell	д+элл
+delonghi	дел+онги
+deluxe	дел+юкс
+demi lovato	д+еми лов+ато
+demo	д+емо
+denon	д+енон
+denzel curry	д+ензел к+арри
+depeche mode	дэп+еш м+од
+dequine	дик+уин
+desiigner	диз+айнер
+dexp	д+эксп
+dido	д+айдо
+digi ghetto	д+иджи г+етто
+digma	д+игма
+diplo	д+ипло
+dire straits	д+айр стр+эйтс
+disclosure	дискл+оужэр
+disney	д+исней
+disturbed	дистёрбд
+dj	ди-дж+эй
+dj bobo	ди-дж+эй б+обо
+dj khaled	ди-дж+эй х+алед
+dj shadow	ди-дж+эй ш+эдоу
+dj smash	ди-дж+эй см+эш
+dj snake	ди-дж+эй сн+эйк
+dji	ди-джи-+ай
+dmx	ди-эм-+экс
+dnce	д+энс
+dns	дэ-эн-+эс
+dodge	д+одж
+doja cat	д+оджа к+эт
+dolby atmos	д+олби +атмос
+dolby digital	д+олби д+иджитал
+donna summer	д+онна с+аммер
+dr. alban	д+октор +албан
+dr. dre	д+октор др+э
+drake	др+эйк
+dreame	др+ими
+dts	ди-ти-+эс
+dua lipa	д+уа л+ипа
+dual sim	ду+ал с+им
+dubstep	д+абстеп
+duran duran	дюр+ан дюр+ан
+dvd	ди-ви-д+и
+e-type	+и т+айп
+eagles	+иглз
+earl sweatshirt	ёрл св+этшот
+earth wind & fire	ёрс в+инд +энд ф+айр
+ecovacs	эков+акс
+ed sheeran	+эд ш+иран
+edge	+эдж
+edifier	+эдифайер
+edit	+эдит
+edith piaf	эд+ит пи+аф
+eiffel 65	+эйфель с+иксти ф+айв
+electric light orchestra	эл+ектрик л+айт +оркестра
+electro	эл+ектро
+electrolux	электрол+юкс
+elica	+элика
+ellie goulding	+элли г+олдинг
+elman	эльм+ан
+elton john	+элтон дж+он
+elvis presley	+элвис пр+если
+enhypen	энх+айпен
+enigma	эн+игма
+enrique iglesias	энр+ике игл+есиас
+enya	+энья
+epica	+эпика
+epson	+эпсон
+erasure	ир+эйжа
+eric clapton	+эрик кл+эптон
+eros ramazzotti	+эрос рамацц+отти
+escape	эск+ейп
+esim	+е с+им
+ethernet	эзерн+ет
+europe	+юроп
+eurythmics	юр+итмикс
+evanescence	эван+эссенс
+eve	+ив
+exo	+эксо
+face id	ф+эйс ай-д+и
+faith no more	ф+эйт н+оу м+ор
+faithless	ф+эйтлесс
+falco	ф+алько
+fall out boy	ф+олл +аут б+ой
+faouzia	ф+аузия
+fatboy slim	ф+этбой сл+им
+feat.	ф+ит
+featuring	ф+ичеринг
+feduk	фед+ук
+fergie	фёрги
+ferrari	ферр+ари
+fiat	ф+иат
+filatov & karas	фил+атов +и кар+ась
+fine young cannibals	ф+айн +янг к+эннибалз
+fisher	ф+ишэр
+five	ф+айв
+fleetwood mac	фл+итвуд м+эк
+flo rida	фл+оу р+айда
+florence + the machine	фл+оренс +энд з+э маш+ин
+flume	фл+ум
+fm	эф-+эм
+foo fighters	ф+у ф+айтерс
+fools garden	ф+улз г+арден
+ford	ф+орд
+foster the people	ф+остер з+э п+ипл
+frank ocean	фр+энк +оушэн
+frank sinatra	фр+энк син+атра
+frankie goes to hollywood	фр+энки г+оуз т+у х+олливуд
+franz ferdinand	фр+анц ф+ердинанд
+fred again	фр+эд эг+эн
+freddie mercury	фр+едди мёркьюри
+french montana	фр+энч монт+ана
+freya ridings	фр+эйя р+айдингс
+friendly thug 52 ngg	фр+эндли т+аг пятьдес+ят дв+а эн-джи-дж+и
+ft.	ф+ит
+fujitsu	фудж+ицу
+full hd	ф+улл эйч-д+и
+future	фь+ючер
+g-dragon	дж+и др+эгон
+g-eazy	дж+и +изи
+gamepad	г+эймпад
+gamma ray	г+амма р+эй
+garbage	г+арбидж
+garmin	г+армин
+gary moore	г+эри м+ур
+gayazovs brothers	га+язовс бр+азерс
+geely	дж+или
+general electric	дж+энерал эл+ектрик
+genesis	дж+энезис
+george ezra	дж+ордж +эзра
+george michael	дж+ордж м+айкл
+geri halliwell	дж+эри х+олливелл
+gesaffelstein	гез+аффельштайн
+ghost	г+оуст
+ghostface killah	г+оустфэйс к+илла
+gif	г+иф
+gigabit	гигаб+ит
+gigabyte	г+игабайт
+giorgio moroder	дж+орджо мор+одер
+gipsy kings	дж+ипси к+ингз
+girls' generation	гёрлз джэнер+эйшн
+gloria gaynor	гл+ория г+ейнор
+gnarls barkley	н+арлз б+аркли
+gojira	годж+ира
+gone.fludd	г+он фл+адд
+google play	г+угл пл+эй
+gopro	г+оупро
+gorenje	гор+енье
+gorillaz	гор+иллаз
+got7	г+от с+эвен
+gotye	готь+е
+gps	джи-пи-+эс
+gpu	джи-пи-+ю
+green day	гр+ин д+эй
+greta van fleet	гр+ета в+ан фл+ит
+groove armada	гр+ув арм+ада
+gsm	джи-эс-+эм
+guano apes	гу+ано +эйпс
+guf	г+уф
+gunna	г+анна
+guns n' roses	г+анз +эн р+оузиз
+gwen stefani	гв+эн стеф+ани
+gza	дж+иза
+haddaway	х+эддэуэй
+haier	х+айер
+halsey	х+олзи
+hammali	хаммал+и
+hammali & navai	хаммал+и +и нав+аи
+hansa	х+анса
+hardwell	х+ардвелл
+harman kardon	х+арман к+ардон
+harry styles	х+арри ст+айлз
+haval	хав+эйл
+hd	эйч-д+и
+hdd	эйч-ди-д+и
+hdr	эйч-ди-+ар
+helloween	х+эллоуин
+heronwater	херонв+отер
+hi-fi	хай-ф+ай
+hi-res	хай-р+эз
+him	х+им
+hip-hop	хип-х+оп
+hisense	х+айсенс
+hit	х+ит
+hitachi	хит+ачи
+homekit	хоумк+ит
+homepod	хоумп+од
+honda	х+онда
+hoobastank	хубаст+анк
+hoover	х+увер
+hooverphonic	хуверф+оник
+hotpoint	х+отпойнт
+house	х+аус
+hozier	х+озиер
+hp	эйч-п+и
+htc	эйч-ти-с+и
+http	эйч-ти-ти-п+и
+https	эйч-ти-ти-пи-+эс
+hurts	хёртс
+hyperx	х+айпер +икс
+hyundai	хёнд+э
+ibm	ай-би-+эм
+ic3peak	айсп+ик
+ice cube	+айс кь+юб
+ice spice	+айс сп+айс
+ice-t	+айс т+и
+id	ай-д+и
+iggy azalea	+игги аз+алия
+iggy pop	+игги п+оп
+ilife	+айлайф
+illit	+айлит
+imac	айм+ак
+imagine dragons	им+эджин др+эгонс
+imany	им+ани
+imou	+аймоу
+in-grid	ингр+ид
+indesit	индез+ит
+indie	+инди
+infiniti	инф+инити
+inna	+инна
+instasamka	инстас+амка
+intex	+интекс
+intro	+интро
+inxs	ин+эксэс
+iot	ай-оу-т+и
+ip	ай-п+и
+ipod	айп+од
+ips	ай-пи-+эс
+iptv	ай-пи-ти-в+и
+irobot	+ай р+обот
+iron maiden	+айрон м+эйден
+itzy	+итзи
+iu	ай-+ю
+ive	+айв
+ivi	+иви
+j balvin	дж+эй б+альвин
+j-hope	дж+эй х+оуп
+j. cole	дж+эй к+оул
+ja rule	дж+а р+ул
+jabra	дж+абра
+jack harlow	дж+эк х+арлоу
+jaguar	ягу+ар
+jah khalib	дж+а хал+иб
+jahmal tgk	джам+ал тэ-гэ-к+а
+james arthur	дж+эймс +артур
+james blunt	дж+эймс бл+ант
+james brown	дж+эймс бр+аун
+james morrison	дж+эймс м+оррисон
+jamiroquai	джамирокв+ай
+janet jackson	дж+анет дж+эксон
+jason derulo	дж+эйсон дер+уло
+jason mraz	дж+эйсон мр+аз
+jay rock	дж+эй р+ок
+jay-z	дж+эй з+и
+jbl	джи-би-+эл
+jean-michel jarre	ж+ан миш+эль ж+арр
+jeep	дж+ип
+jennie	дж+энни
+jennifer lopez	дж+эннифер л+опес
+jess glynne	дж+эсс гл+ин
+jessie j	дж+эсси дж+эй
+jethro tull	дж+этро т+алл
+jid	дж+ид
+jimi hendrix	дж+ими х+ендрикс
+jimin	чим+ин
+jisoo	джис+у
+joan jett	дж+оан дж+этт
+joe cocker	дж+о к+окер
+john legend	дж+он л+еджэнд
+john lennon	дж+он л+еннон
+john mayer	дж+он м+эйер
+john newman	дж+он нь+юман
+john summit	дж+он с+аммит
+johnny cash	дж+онни к+эш
+johnny hallyday	дж+онни холлид+ей
+jonas brothers	дж+онас бр+азерс
+jony	дж+они
+joy division	дж+ой див+ижн
+jpegmafia	джэйпегм+афия
+jpg	дж+эйпег
+judas priest	дж+удас пр+ист
+juice wrld	дж+ус вёрлд
+julio iglesias	х+улио игл+есиас
+jung kook	чонг+ук
+justice	дж+астис
+justin bieber	дж+астин б+ибер
+justin timberlake	дж+астин т+имберлэйк
+jvc	джэй-ви-с+и
+k-pop	кэй-п+оп
+kaiser chiefs	к+айзер ч+ифс
+kaleo	кал+ео
+kanye west	к+анье у+эст
+karaoke	кара+оке
+karcher	к+ерхер
+karol g	кар+оль дж+и
+kasabian	кас+эбиан
+kaskade	каск+эйд
+kaspersky	касп+ерский
+kate bush	к+эйт б+уш
+katy perry	к+эти п+ерри
+kavabanga depo kolibri	кав+абанга д+епо кол+ибри
+keane	к+ин
+kelly clarkson	к+елли кл+арксон
+kendrick lamar	к+ендрик лам+ар
+kenwood	к+енвуд
+kesha	к+еша
+kia	к+иа
+kid cudi	к+ид к+ади
+kid ink	к+ид +инк
+kim wilde	к+им у+айлд
+kings of leon	к+ингз +оф л+ион
+kingston	к+ингстон
+kiss	к+исс
+kitchenaid	к+итчен +эйд
+kitfort	к+итфорт
+kizaru	киз+ару
+klipsch	кл+ипш
+kodak	к+одак
+kodak black	к+одак бл+эк
+kodaline	к+одалайн
+korn	к+орн
+kosheen	кош+ин
+kraftwerk	кр+афтверк
+krec	кр+эк
+kuok	ку+ок
+kuppersberg	к+упперсберг
+kygo	к+айго
+kylie minogue	к+айли мин+оуг
+lacuna coil	лак+уна к+ойл
+lada	л+ада
+lady gaga	л+еди г+ага
+lamborghini	ламборг+ини
+lan	л+ан
+lana del rey	л+ана д+эль р+эй
+land rover	л+енд р+овер
+lara fabian	л+ара фаби+ан
+laura branigan	л+ора бр+эниган
+laura pausini	л+аура пауз+ини
+lauv	л+аув
+le sserafim	л+е ссераф+им
+led zeppelin	л+ед з+еппелин
+lenny kravitz	л+енни кр+авиц
+lenovo	лен+ово
+leona lewis	ле+она ль+юис
+leonard cohen	леон+ард к+оэн
+lewis capaldi	ль+юис кап+альди
+lexus	л+ексус
+liam payne	л+иам п+эйн
+liebherr	л+ибхер
+lil baby	л+ил б+эйби
+lil durk	л+ил дёрк
+lil jon	л+ил дж+он
+lil nas x	л+ил н+ас +экс
+lil peep	л+ил п+ип
+lil pump	л+ил п+амп
+lil skies	л+ил ск+айз
+lil tecca	л+ил т+екка
+lil tjay	л+ил т+иджэй
+lil uzi vert	л+ил +узи вёрт
+lil wayne	л+ил у+эйн
+lil yachty	л+ил +яти
+limp bizkit	л+имп б+изкит
+lindemann	л+индеманн
+lindsey stirling	л+индси стёрлинг
+linkin park	л+инкин п+арк
+lionel richie	лай+онел р+ичи
+lisa	л+иса
+little big	л+итл б+иг
+little mix	л+итл м+икс
+lizer	л+айзер
+lizzo	л+иззо
+ll cool j	эл-+эл к+ул дж+эй
+lo-fi	лоу-ф+ай
+loboda	лобод+а
+logic	л+оджик
+logitech	лоджит+ек
+loqiemean	локим+ин
+lorde	л+орд
+lost frequencies	л+ост фр+иквенсис
+lou reed	л+у р+ид
+louis armstrong	л+уи +армстронг
+lounge	л+аунж
+lovv66	л+ав шэстьдес+ят ш+эсть
+lp	эл-п+и
+lte	эл-ти-+и
+ludacris	л+удакрис
+luis fonsi	лу+ис ф+онси
+lumen	л+юмен
+lykke li	л+юкке л+и
+m'dee	эмд+и
+m83	+эм в+осемьдесят тр+и
+mac miller	м+ак м+иллер
+macan	мак+ан
+machine gun kelly	маш+ин г+ан к+елли
+macklemore	м+аклемор
+madlib	м+эдлиб
+major lazer	м+эйджор л+эйзер
+makita	мак+ита
+mamamoo	мамам+у
+maneskin	м+онескин
+manic street preachers	м+эник стр+ит пр+ичерс
+manowar	манов+ар
+mariah carey	мар+айя к+эри
+marilyn manson	м+эрилин м+энсон
+mark ronson	м+арк р+онсон
+markul	марк+ул
+maroon 5	мар+ун ф+айв
+marshall	м+аршалл
+marshmello	маршм+эллоу
+martin garrix	м+артин г+аррикс
+mary gu	м+эри г+у
+mashup	мэш+ап
+massive attack	м+эссив ат+ак
+matter	м+эттер
+mayot	май+от
+mazda	м+азда
+mc	эм-с+и
+meat loaf	м+ит л+оуф
+megadeth	мегад+эт
+megan thee stallion	м+еган з+э ст+эльон
+meizu	м+ейзу
+melanie c	м+елани с+и
+melanie martinez	м+елани март+инес
+mercedes-benz	мерс+едес б+енц
+meta	м+ета
+metallica	мет+аллика
+method man	м+этод м+эн
+metro boomin	м+етро б+умин
+mf doom	эм-+эф д+ум
+mgmt	эм-джи-эм-т+и
+michael buble	м+айкл бубл+е
+michael jackson	м+айкл дж+эксон
+michael kiwanuka	м+айкл киван+ука
+microsd	м+икро эс-д+и
+microsoft	м+айкрософт
+midea	мид+эа
+midi	м+иди
+miele	м+иле
+migos	м+игос
+mika	м+ика
+mike oldfield	м+айк +олдфилд
+miley cyrus	м+айли с+айрус
+milky chance	м+илки ч+анс
+miracast	мирок+аст
+missy elliott	м+исси +эллиотт
+mitsubishi	мицуб+иси
+mix	м+икс
+miyagi & andy panda	ми+яги энд +энди п+анда
+mobb deep	м+об д+ип
+moby	м+оби
+moderat	м+одерат
+modern talking	м+одерн т+окинг
+modeselektor	модесел+ектор
+moloko	мол+око
+monatik	мон+атик
+moneyken	манек+ен
+monsta x	м+онста +экс
+morandi	мор+анди
+morcheeba	морч+иба
+morgenshtern	моргеншт+ерн
+morrissey	м+оррисси
+mos def	м+ос д+эф
+mot	м+от
+motionless in white	м+оушэнлесс +ин у+айт
+motorola	мотор+ола
+moulinex	мулин+екс
+mp3	эм-п+э тр+и
+mp4	эм-п+э чет+ыре
+msi	эм-эс-+ай
+murovei	мурав+ей
+muse	мь+юз
+my chemical romance	м+ай к+емикал ром+энс
+n.w.a.	эн-дабл-ю-+эй
+nas	н+ас
+natalie imbruglia	нат+али имбр+улья
+natasha bedingfield	нат+аша б+едингфилд
+naughty boy	н+оти б+ой
+navai	нав+аи
+navitel	навит+ел
+nazareth	н+азарет
+nct	эн-си-т+и
+ne-yo	н+и й+о
+nec	н+эк
+nelly	н+елли
+nelly furtado	н+елли фурт+адо
+nespresso	неспр+ессо
+new order	нь+ю +ордер
+new radicals	нь+ю р+эдикалз
+newjeans	ньюдж+инс
+nf	эн-+эф
+nfc	эн-эф-с+и
+nick cave	н+ик к+эйв
+nickelback	н+икельбэк
+nicki minaj	н+ики мин+аж
+nico & vinz	н+ико +энд в+инс
+nicolas jaar	никол+ас дж+аар
+nicole scherzinger	ник+оль ш+эрзингер
+nightwish	н+айтвиш
+nikon	н+икон
+niletto	нилетт+о
+nine inch nails	н+айн +инч н+эйлз
+nirvana	нирв+ана
+nissan	нисс+ан
+no doubt	н+оу д+аут
+noize mc	н+ойз эм-с+и
+nokia	н+окиа
+norah jones	н+ора дж+онс
+nothing	н+асинг
+nothing but thieves	н+асинг б+ат с+ивз
+nsync	энс+инк
+oasis	о+эйсис
+obladaet	облад+ает
+of monsters and men	+оф м+онстерс +энд м+эн
+offset	+оффсет
+okko	+окко
+oliver tree	+оливер тр+и
+olivia rodrigo	ол+ивия родр+иго
+olly murs	+олли мёрс
+olympus	ол+импус
+one direction	у+ан дир+екшн
+oneplus	у+ан пл+ас
+onerepublic	уанрип+аблик
+onkyo	+онкио
+onyx	+оникс
+oomph!	+умф
+opel	+опель
+oppo	+оппо
+oqjav	окудж+ав
+oral-b	ор+ал б+и
+orbital	+орбитал
+orchestral manoeuvres in the dark	орк+естрал ман+уврз +ин з+э д+арк
+original	ор+иджинал
+oscar benton	+оскар б+ентон
+ost	о-эс-т+э
+ottawan	оттав+ан
+outkast	+ауткаст
+outro	+аутро
+owl city	+аул с+ити
+oxxxymiron	оксимир+он
+ozzy osbourne	+оззи +осборн
+p!nk	п+инк
+p.o.d.	пи-оу-д+и
+paloma faith	пал+ома ф+эйт
+panasonic	панас+оник
+panic! at the disco	п+эник +эт з+э д+иско
+pantera	пант+ера
+papa roach	п+апа р+оуч
+paramore	п+арамор
+passenger	п+эссенджэр
+patricia kaas	патр+исия к+аас
+patti smith	п+атти см+ит
+paul mccartney	п+ол макк+артни
+paul van dyk	п+ол в+ан д+айк
+pdf	пэ-дэ-+эф
+pearl jam	пёрл дж+эм
+pendulum	п+ендулум
+pet shop boys	п+эт ш+оп б+ойз
+peter gabriel	п+итер г+эбриэл
+peugeot	пеж+о
+pharrell williams	фарр+елл у+ильямс
+phil collins	ф+ил к+оллинз
+phoenix	ф+еникс
+pin	п+ин
+pink floyd	п+инк фл+ойд
+pioneer	пион+ер
+pitbull	п+итбуль
+pixel	п+иксель
+pixies	п+иксис
+placebo	плас+ибо
+platina	пл+атина
+playboi carti	пл+эйбой к+арти
+png	пэ-эн-г+э
+poco	п+око
+poets of the fall	п+оэтс +оф з+э ф+олл
+polaris	пол+арис
+polaroid	полар+оид
+polo g	п+оло дж+и
+pop smoke	п+оп см+оук
+porsche	п+оршэ
+portishead	п+ортисхэд
+post malone	п+ост мал+оун
+powerbank	пауэрб+анк
+powerwolf	п+ауэрвулф
+prestigio	прест+ижио
+primal scream	пр+аймал скр+им
+prince	пр+инс
+psy	с+ай
+public enemy	п+аблик +энеми
+pulp	п+алп
+punk	п+анк
+purple disco machine	пёрпл д+иско маш+ин
+pusha t	п+уша т+и
+pyrokinesis	пирокин+езис
+qled	кьюл+эд
+qr	кью-+ар
+quavo	кв+ейво
+queens of the stone age	кв+инз +оф з+э ст+оун +эйдж
+r&b	ар-энд-б+и
+r.e.m.	ар-и-+эм
+radiohead	р+эдиохэд
+rae sremmurd	р+эй ср+эммурд
+rag'n'bone man	р+эг +эн б+оун м+эн
+rage against the machine	р+эйдж эг+энст з+э маш+ин
+ram	р+ам
+rap	р+эп
+rasa	р+аса
+rauf & faik	ра+уф +и фа+ик
+ray charles	р+эй ч+арльз
+razer	р+эйзер
+razorlight	р+эйзорлайт
+realme	р+илми
+red hot chili peppers	р+эд х+от ч+или п+епперс
+red velvet	р+эд в+элвет
+redman	р+эдмен
+redmond	р+едмонд
+reflex	р+ефлекс
+regard	риг+ард
+remaster	рем+астер
+renault	рен+о
+rgb	эр-гэ-б+э
+rick astley	р+ик +эстли
+rick ross	р+ик р+осс
+ricky martin	р+ики м+артин
+rihanna	ри+анна
+rita ora	р+ита +ора
+ritmix	р+итмикс
+roaming	р+оуминг
+robbie williams	р+обби у+ильямс
+robert miles	р+оберт м+айлз
+robin schulz	р+обин ш+ульц
+robin thicke	р+обин с+ик
+roborock	р+оборок
+robyn	р+обин
+rod stewart	р+од сть+юарт
+roddy ricch	р+одди р+ич
+roger waters	р+оджэр у+отерс
+rolls-royce	р+оллс р+ойс
+rowenta	ров+ента
+roxette	рокс+эт
+roxy music	р+окси мь+юзик
+roy orbison	р+ой +орбисон
+royal blood	р+ойал бл+ад
+royksopp	рёйксоп
+rudimental	рудим+ентал
+rufus du sol	р+уфус д+ю с+оль
+run the jewels	р+ан з+э дж+улз
+run-dmc	р+ан ди-эм-с+и
+ruth b.	р+ут б+и
+rutube	рут+уб
+rza	р+иза
+sabaton	сабат+он
+sabrina carpenter	сабр+ина к+арпентер
+sade	шад+э
+saeco	са+эко
+safri duo	с+афри д+уо
+saluki	сал+уки
+sam smith	с+эм см+ит
+samantha fox	сам+анта ф+окс
+sandisk	с+эндиск
+sandra	с+андра
+santana	сант+ана
+sanyo	с+аньо
+sash!	с+аш
+savage	с+эвидж
+savage garden	с+эвидж г+арден
+saweetie	сав+ити
+scarlett	ск+арлетт
+schneider electric	шн+айдер эл+ектрик
+schoolboy q	ск+улбой кь+ю
+scooter	ск+утер
+scorpions	ск+орпионс
+sd	эс-д+и
+seagate	с+игейт
+seal	с+ил
+sean paul	ш+он п+ол
+selena gomez	сел+ена г+омес
+sennheiser	сенх+айзер
+sepultura	сепульт+ура
+serebro	серебр+о
+serj tankian	с+ерж танк+ян
+seventeen	севент+ин
+shadowraze	ш+эдоурэйз
+shakira	шак+ира
+shaman	ш+аман
+shania twain	шан+айя тв+эйн
+sharp	ш+арп
+shawn mendes	ш+он м+ендес
+shinee	ш+айни
+sia	с+ия
+siemens	с+именс
+sigala	сиг+ала
+sigur ros	с+игур р+ос
+silk sonic	с+илк с+оник
+sim	с+им
+simple minds	с+импл м+айндз
+simple plan	с+импл пл+эн
+simply red	с+импли р+эд
+sinead o'connor	шин+ейд ок+оннор
+single	с+ингл
+siouxsie and the banshees	сь+юзи +энд з+э б+эншиз
+skepta	ск+епта
+ski mask the slump god	ск+и м+аск з+э сл+амп г+од
+skillet	ск+иллет
+skoda	шк+ода
+skrillex	скр+иллекс
+skunk anansie	ск+анк ан+анси
+slade	сл+эйд
+slame	сл+эйм
+slash	сл+эш
+slaughter to prevail	сл+отер т+у прив+эйл
+slava marlow	сл+ава м+арлоу
+slayer	сл+эйер
+slipknot	сл+ипнот
+smart home	см+арт х+оум
+smart tv	см+арт ти-в+и
+smash mouth	см+эш м+аус
+smeg	см+эг
+smokie	см+оки
+sms	эс-эм-+эс
+snap!	сн+эп
+snapchat	сн+эпчат
+snoop dogg	сн+уп д+огг
+snow patrol	сн+оу патр+ол
+soda luv	с+ода л+ав
+soft cell	с+офт с+элл
+solomun	солом+ун
+sonos	с+онос
+sophie ellis-bextor	с+офи +эллис б+экстор
+sos	с+ос
+soul asylum	с+оул эс+айлам
+soulfly	с+оулфлай
+soulja boy	с+оулджа б+ой
+soundcloud	с+аундклауд
+soundgarden	с+аундгарден
+soundtrack	саундтр+ек
+spandau ballet	сп+андау бал+эй
+sparks	сп+аркс
+spice girls	сп+айс гёрлз
+spin doctors	сп+ин д+окторс
+sqwoz bab	скв+озь б+аб
+ssd	эс-эс-д+и
+ssshhhiiittt!	щ+ит
+st	эс-т+и
+st1m	ст+им
+status quo	ст+атус кв+о
+steam	ст+им
+steppenwolf	ст+еппенвулф
+stereo	ст+ерео
+stereophonics	стереоф+оникс
+steve aoki	ст+ив а+оки
+stevie wonder	ст+иви у+андер
+stihl	шт+иль
+sting	ст+инг
+stone sour	ст+оун с+ауэр
+stone temple pilots	ст+оун т+эмпл п+айлотс
+stormzy	ст+ормзи
+stray kids	стр+эй к+идс
+stromae	стром+ай
+subaru	суб+ару
+suede	св+эйд
+sugababes	ш+угабэйбз
+suicideboys	суис+айдбойз
+sum 41	с+ам ф+орти у+ан
+sunrise avenue	с+анрайз +авеню
+super junior	с+упер дж+униор
+supertramp	с+упертрэмп
+supra	с+упра
+survivor	серв+айвор
+suzanne vega	сюз+анна в+ега
+suzi quatro	сь+юзи кв+атро
+suzuki	суз+уки
+sven	св+эн
+swedish house mafia	св+идиш х+аус м+афия
+synology	син+олоджи
+system of a down	с+истем +оф +э д+аун
+sza	с+иза
+t-fest	т+и ф+ест
+t. rex	т+и р+экс
+t.a.t.u.	тат+у
+t.i.	ти-+ай
+taemin	тэм+ин
+taeyeon	тэён
+take that	т+эйк з+эт
+takeoff	т+эйкофф
+talk talk	т+ок т+ок
+talking heads	т+окинг х+эдз
+tame impala	т+эйм имп+ала
+tanita tikaram	тан+ита тикар+ам
+tarja	т+арья
+tatarka	тат+арка
+taylor swift	т+эйлор св+ифт
+tcl	ти-си-+эл
+tears for fears	т+иэрс ф+ор ф+иэрс
+technics	т+ехникс
+techno	т+ехно
+tecno	т+екно
+teka	т+ека
+texas	т+ексас
+texet	т+ексет
+the animals	з+э +энималз
+the beach boys	з+э б+ич б+ойз
+the beatles	з+э б+итлз
+the black keys	з+э бл+эк к+из
+the cardigans	з+э к+ардиганс
+the chainsmokers	з+э ч+ейнсмоукерс
+the chemical brothers	з+э к+емикал бр+азерс
+the clash	з+э кл+эш
+the corrs	з+э к+оррс
+the cranberries	з+э кр+энберрис
+the cult	з+э к+алт
+the cure	з+э кь+юр
+the doors	з+э д+орз
+the game	з+э г+ейм
+the hives	з+э х+айвз
+the hu	з+э х+у
+the kid laroi	з+э к+ид лар+ой
+the killers	з+э к+иллерс
+the kinks	з+э к+инкс
+the kooks	з+э к+укс
+the lumineers	з+э люмин+ирс
+the national	з+э н+эшнл
+the neighbourhood	з+э н+ейборхуд
+the notorious b.i.g.	з+э нот+ориус би-ай-дж+и
+the offspring	з+э +оффспринг
+the police	з+э пол+ис
+the pretty reckless	з+э пр+итти р+эклесс
+the prodigy	з+э пр+одиджи
+the pussycat dolls	з+э п+уссикэт д+оллз
+the rasmus	з+э р+асмус
+the rolling stones	з+э р+оллинг ст+оунз
+the roots	з+э р+утс
+the script	з+э скр+ипт
+the smashing pumpkins	з+э см+эшинг п+ампкинс
+the smiths	з+э см+итс
+the strokes	з+э стр+оукс
+the verve	з+э вёрв
+the weeknd	з+э уик+энд
+the white stripes	з+э у+айт стр+айпс
+the who	з+э х+у
+the xx	з+э икс-+икс
+therr maitz	т+эр м+эйтс
+thirty seconds to mars	сёрти с+экондз т+у м+арс
+thom yorke	т+ом й+орк
+thomas	т+омас
+thomas anders	т+омас +андерс
+thread	тр+эд
+three days grace	тр+и д+эйз гр+эйс
+thrill pill	тр+илл п+илл
+tiesto	ти+есто
+timbaland	т+имбалэнд
+timberk	т+имберк
+tina turner	т+ина тёрнер
+tlc	ти-эл-с+и
+tokio hotel	т+окио хот+эл
+tom jones	т+ом дж+онс
+tom odell	т+ом од+элл
+tom petty	т+ом п+етти
+tom waits	т+ом у+эйтс
+tom walker	т+ом у+окер
+tomorrow x together	тум+орроу б+ай туг+эзер
+tony bennett	т+они б+еннетт
+toploader	т+оплоудер
+tori amos	т+ори +эймос
+tory lanez	т+ори л+эйнз
+toshiba	тош+иба
+toto	т+ото
+touch id	т+ач ай-д+и
+touchpad	тачп+ад
+touchscreen	тачскр+ин
+tove lo	т+уве л+у
+tp-link	ти-п+и л+инк
+track	тр+ек
+tracy chapman	тр+эйси ч+эпмен
+train	тр+эйн
+trance	тр+анс
+trap	тр+эп
+travis scott	тр+эвис ск+отт
+tricky	тр+ики
+troye sivan	тр+ой сив+ан
+tsoy	ц+ой
+tts	ти-ти-+эс
+tv	ти-в+и
+twenty one pilots	тв+энти у+ан п+айлотс
+twice	тв+айс
+twitch	тв+ич
+two door cinema club	т+у д+ор с+инема кл+аб
+tws	ти-дабл-ю-+эс
+ty dolla sign	т+ай д+олла с+айн
+tyga	т+айга
+tyler the creator	т+айлер з+э кри+эйтор
+type-c	т+айп с+и
+u2	+ю т+у
+ub40	ю-б+и с+орок
+uber	+убер
+ugreen	югр+ин
+uhd	ю-эйч-д+и
+uma2rman	умат+урман
+underworld	+андерворлд
+ups	ю-пи-+эс
+uriah heep	юр+айя х+ип
+url	ю-ар-+эл
+usher	+ашэр
+v	в+и
+vampire weekend	в+эмпайр уик+энд
+van halen	в+ан х+ален
+vance joy	в+энс дж+ой
+vanessa paradis	ван+есса парад+и
+vangelis	ванг+елис
+vavan	вов+ан
+vaya con dios	в+айя к+он д+иос
+vengaboys	в+енгабойз
+version	вёржн
+vga	ви-джи-+эй
+viessmann	в+исман
+ville valo	в+илле в+ало
+vip	в+ип
+vitek	в+итек
+vivo	в+иво
+voip	в+ойп
+volbeat	в+олбит
+volkswagen	фольксв+аген
+volvo	в+ольво
+vpn	ви-пи-+эн
+vr	ви-+ар
+vs	в+эрсус
+vs.	в+эрсус
+wacom	в+аком
+walk the moon	у+ок з+э м+ун
+wav	в+ав
+webcam	вебк+ам
+western digital	в+эстерн д+иджитал
+westlife	в+эстлайф
+wham!	в+эм
+whirlpool	в+ирпул
+whitesnake	у+айтснэйк
+whitney houston	у+итни хь+юстон
+wildberries	в+айлдберриз
+wildways	у+айлдвэйз
+will.i.am	в+ил +ай +эм
+wink	в+инк
+within temptation	виз+ин темпт+эйшн
+wiz khalifa	у+из хал+ифа
+woodkid	в+удкид
+wps	дабл-ю-пи-+эс
+wu-tang clan	в+у т+анг кл+эн
+x ambassadors	+икс амб+ассадорс
+xandria	кс+андрия
+xcho	х+ачо
+xxxtentacion	экс-экс-+экс тентась+он
+yamaha	ям+аха
+yanni	+янни
+yazoo	яз+у
+years & years	й+ирс +энд й+ирс
+yeat	й+ит
+yelawolf	й+елавулф
+yello	й+елло
+yellowcard	й+еллоукард
+yngwie malmsteen	+ингви м+альмстин
+yolanda be cool	йол+анда б+и к+ул
+young thug	+янг т+аг
+yung trappa	+янг тр+аппа
+yungblud	янгбл+ад
+zalman	з+алман
+zanussi	зан+усси
+zara larsson	з+ара л+арссон
+zayn	з+эйн
+zaz	з+аз
+zazie	заз+и
+zedd	з+эдд
+zeekr	з+икр
+zero 7	з+иро с+эвен
+zivert	з+иверт
+zoloto	з+олото
+zte	зэд-ти-+и
+zyxel	з+айксель
+zz top	зи-з+и т+оп
+би-2	би-дв+а
+24/7	дв+адцать чет+ыре на семь
+50/50	пятьдес+ят на пятьдес+ят
+# Titles, brands and terms the English reader gets wrong
+air	эйр
+avatar	ават+ар
+dune	д+юна
+gladiator	глади+атор
+half-life	х+алф-л+айф
+homework	х+оумворк
+imax	+аймакс
+notion	н+оушен
+rosalia	росал+ия
+stardew	ст+ардью
+titanic	тит+аник
+yesterday	й+естердэй
+backup	бэк+ап
+coworking	ков+оркинг
+manager	м+енеджер
+release	рел+из
+roadmap	р+оудмэп
+# Words written with diacritics too: the key is without them ("café", "Nestlé")
+cafe	каф+е
+nestle	н+естле
+pokemon	покем+он
+zizek	ж+ижек

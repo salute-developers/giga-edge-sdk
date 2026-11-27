@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="290" viewBox="0 0 760 290" role="img" aria-labelledby="title">
+  <title id="title">An environment is visible in the version that declares it and in every version nested in it</title>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .card2{fill:#f6f8fa;stroke:#0969da;stroke-width:1.5}
+    .own{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .seen{fill:#fff;stroke:#8250df;stroke-dasharray:3 3}
+    .purple{fill:#8250df}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="289" rx="12"/>
+
+  <rect class="frame" x="24" y="24" width="712" height="206" rx="10"/>
+  <text class="note" x="38" y="46">core graph</text>
+  <rect class="own" x="38" y="58" width="96" height="24" rx="12"/>
+  <text class="mono small b mid purple" x="86" y="74">shared_pool</text>
+
+  <rect class="card" x="160" y="58" width="384" height="158" rx="10"/>
+  <text x="174" y="80"><tspan class="mono b">asr</tspan><tspan class="note" dx="8">version v2</tspan></text>
+  <rect class="own" x="174" y="92" width="68" height="24" rx="12"/>
+  <text class="mono small b mid purple" x="208" y="108">asr_env</text>
+  <rect class="seen" x="250" y="92" width="96" height="24" rx="12"/>
+  <text class="mono small mid purple" x="298" y="108">shared_pool</text>
+
+  <rect class="card2" x="322" y="128" width="208" height="76" rx="8"/>
+  <text x="334" y="149"><tspan class="mono b">encoder</tspan><tspan class="note" dx="8">version v1</tspan></text>
+  <rect class="seen" x="334" y="162" width="68" height="24" rx="12"/>
+  <text class="mono small mid purple" x="368" y="178">asr_env</text>
+  <rect class="seen" x="410" y="162" width="96" height="24" rx="12"/>
+  <text class="mono small mid purple" x="458" y="178">shared_pool</text>
+
+  <rect class="card" x="560" y="58" width="162" height="158" rx="10"/>
+  <text x="574" y="80"><tspan class="mono b">tts</tspan><tspan class="note" dx="8">version v1</tspan></text>
+  <rect class="seen" x="574" y="92" width="96" height="24" rx="12"/>
+  <text class="mono small mid purple" x="622" y="108">shared_pool</text>
+  <text class="note small" x="574" y="140">asr_env is not visible</text>
+  <text class="note small" x="574" y="155">outside asr</text>
+
+  <rect class="own" x="200" y="250" width="40" height="18" rx="9"/>
+  <text class="note" x="248" y="263">declared here</text>
+  <rect class="seen" x="372" y="250" width="40" height="18" rx="9"/>
+  <text class="note" x="420" y="263">visible from an outer version</text>
+</svg>

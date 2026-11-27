@@ -1,0 +1,36 @@
+{
+  "name": "Городская квартира",
+  "rooms": [
+    {"name": "Кухня",    "x": -2.6, "z": -2, "w": 5.2, "d": 4, "floor": "#748185"},
+    {"name": "Спальня",  "x": 2.6,  "z": -2, "w": 5.2, "d": 4, "floor": "#9a8064"},
+    {"name": "Гостиная", "x": -2.6, "z": 2,  "w": 5.2, "d": 4, "floor": "#927257"},
+    {"name": "Прихожая", "x": 2.6,  "z": 2,  "w": 5.2, "d": 4, "floor": "#69787c"}
+  ],
+  "assistant": {"area": "Гостиная", "pos": [-2.7, 0.465, 2.65]},
+  "devices": [
+    {"domain": "vacuum", "name": "Робот-пылесос", "area": "Прихожая", "facing": "-x", "pos": [5.08, 0, 1.0], "values": {"on_off": false, "battery_percentage": 80}},
+    {"domain": "light", "name": "Свет на кухне", "area": "Кухня", "mount": "ceiling", "pos": [-2.6, 2.05, -1.4], "values": {"on_off": true, "light_brightness": 70, "light_colour": null, "light_colour_temp": 60}},
+    {"domain": "light", "name": "Подсветка столешницы", "area": "Кухня", "kind": "led_strip", "facing": "+z", "length": 3.1, "pos": [-2.8, 1.5, -3.95], "values": {"on_off": false, "light_brightness": 50, "light_colour": null, "light_colour_temp": 30}},
+    {"domain": "switch", "name": "Чайник", "area": "Кухня", "kind": "kettle", "pos": [-1.6, 1.04, -3.55], "values": {"on_off": false}},
+    {"domain": "valve", "name": "Кран воды", "area": "Кухня", "pos": [-0.9, 0.58, -3.6], "values": {"open_set": "open"}},
+    {"domain": "binary_sensor", "device_class": "moisture", "name": "Датчик протечки", "area": "Кухня", "pos": [-3.7, 0.1, -2.9], "values": {"water_leak_state": false}},
+
+    {"domain": "light", "name": "Ночник", "area": "Спальня", "base": 0.76, "pos": [2.45, 1.12, -3.6], "values": {"on_off": true, "light_brightness": 25, "light_colour": null, "light_colour_temp": 5}},
+    {"domain": "cover", "name": "Шторы в спальне", "area": "Спальня", "facing": "+z", "length": 2.0, "pos": [1.2, 1.35, -3.76], "values": {"open_percentage": 0}},
+    {"domain": "climate", "name": "Обогреватель", "area": "Спальня", "pos": [0.35, 0, -2.2], "values": {"on_off": true, "hvac_temp_set": 22, "temperature": 21.5}},
+    {"domain": "humidifier", "name": "Увлажнитель", "area": "Спальня", "pos": [4.6, 0, -0.7], "values": {"on_off": false, "hvac_humidity_set": 50}},
+
+    {"domain": "light", "name": "Торшер", "area": "Гостиная", "pos": [-4.7, 1.65, 3.7], "values": {"on_off": true, "light_brightness": 60, "light_colour": null, "light_colour_temp": 15}},
+    {"domain": "media_player", "device_class": "tv", "name": "Телевизор", "area": "Гостиная", "facing": "-x", "pos": [-0.55, 1.15, 1.5], "values": {"on_off": false, "volume_int": 25, "mute": false}},
+    {"domain": "climate", "name": "Кондиционер", "area": "Гостиная", "kind": "hvac_ac", "hvac_mode": "cool", "pos": [-5.07, 1.95, 0.6], "values": {"on_off": false, "hvac_temp_set": 23, "temperature": 24.5}},
+    {"domain": "cover", "name": "Шторы в гостиной", "area": "Гостиная", "length": 2.4, "pos": [-4.96, 1.3, 2.45], "values": {"open_percentage": 100}},
+    {"domain": "sensor", "device_class": "temperature", "name": "Датчик температуры", "area": "Гостиная", "pos": [-5.16, 1.3, 0.5], "values": {"temperature": 24.5}},
+
+    {"domain": "light", "name": "Свет в прихожей", "area": "Прихожая", "mount": "ceiling", "pos": [2.6, 2.1, 1.9], "values": {"on_off": false, "light_brightness": 70, "light_colour": null, "light_colour_temp": 50}},
+    {"domain": "binary_sensor", "device_class": "door", "name": "Входная дверь", "area": "Прихожая", "facing": "+z", "pos": [2.6, 0, 3.95], "values": {"doorcontact_state": false}}
+  ],
+  "scenarios": [
+    {"domain": "scene", "id": "movie", "name": "Кино", "set": [{"name": "Свет на кухне", "values": {"on_off": false}}, {"name": "Торшер", "values": {"on_off": true, "light_brightness": 15}}, {"name": "Шторы в гостиной", "values": {"open_percentage": 0}}, {"name": "Телевизор", "values": {"on_off": true}}]},
+    {"domain": "script", "id": "leaving", "name": "Я ушёл", "set": [{"domain": "light", "values": {"on_off": false}}, {"domain": "climate", "values": {"on_off": false}}, {"name": "Телевизор", "values": {"on_off": false}}, {"name": "Чайник", "values": {"on_off": false}}, {"name": "Кран воды", "values": {"open_set": "close"}}]}
+  ]
+}

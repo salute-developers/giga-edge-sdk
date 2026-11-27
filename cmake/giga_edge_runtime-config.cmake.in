@@ -1,0 +1,18 @@
+# Config of the prebuilt giga_edge_runtime: one imported shared target with all the static content of the SDK inside
+# (see cmake/SharedRuntime.cmake).
+
+if(TARGET giga_edge::giga_edge_runtime)
+  return()
+endif()
+
+# <prefix>/@CMAKE_INSTALL_LIBDIR@/cmake/giga_edge_runtime -> <prefix>
+get_filename_component(_giga_edge_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+
+add_library(giga_edge::giga_edge_runtime SHARED IMPORTED)
+set_target_properties(giga_edge::giga_edge_runtime PROPERTIES
+  IMPORTED_LOCATION "${_giga_edge_prefix}/@CMAKE_INSTALL_LIBDIR@/@_shared_name@"
+  INTERFACE_INCLUDE_DIRECTORIES "${_giga_edge_prefix}/@CMAKE_INSTALL_INCLUDEDIR@"
+  INTERFACE_COMPILE_FEATURES cxx_std_17
+)
+
+unset(_giga_edge_prefix)

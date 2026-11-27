@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="260" viewBox="0 0 760 260" role="img" aria-labelledby="title">
+  <title id="title">A node with two inputs, two outputs and params</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .head{font-size:11px;font-weight:600;letter-spacing:.08em;fill:#59636e}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .port{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .sep{stroke:#0969da;stroke-opacity:.35}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .pill{fill:#f6f8fa;stroke:#8c959f}
+    .dots{stroke:#8c959f;stroke-dasharray:2 3}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="259" rx="12"/>
+
+  <text class="head mid" x="191" y="60">INPUTS</text>
+  <text class="head mid" x="567" y="60">OUTPUTS</text>
+
+  <rect class="node" x="280" y="40" width="200" height="140" rx="10"/>
+  <text class="mono b mid" x="380" y="67">node_name</text>
+  <line class="sep" x1="280" y1="82" x2="480" y2="82"/>
+
+  <path class="edge" d="M110 112H272"/>
+  <text class="mono mid" x="191" y="104">data_1</text>
+  <path class="edge" d="M110 148H272"/>
+  <text class="mono mid" x="191" y="140">data_2</text>
+  <circle class="port" cx="280" cy="112" r="5"/>
+  <text class="mono" x="294" y="116">input_1</text>
+  <circle class="port" cx="280" cy="148" r="5"/>
+  <text class="mono" x="294" y="152">input_2</text>
+
+  <circle class="port" cx="480" cy="112" r="5"/>
+  <text class="mono end" x="466" y="116">output_1</text>
+  <circle class="port" cx="480" cy="148" r="5"/>
+  <text class="mono end" x="466" y="152">output_2</text>
+  <path class="edge" d="M486 112H648"/>
+  <text class="mono mid" x="567" y="104">data_3</text>
+  <path class="edge" d="M486 148H648"/>
+  <text class="mono mid" x="567" y="140">data_4</text>
+
+  <line class="dots" x1="380" y1="180" x2="380" y2="196"/>
+  <rect class="pill" x="335" y="196" width="90" height="26" rx="13"/>
+  <text class="mono mid" x="380" y="213">params</text>
+
+  <text class="note mid" x="380" y="246">A node runs as soon as all its inputs have a value.</text>
+</svg>

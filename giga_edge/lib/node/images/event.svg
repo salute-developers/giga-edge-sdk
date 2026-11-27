@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="290" viewBox="0 0 760 290" role="img" aria-labelledby="title">
+  <title id="title">Which nodes see an event: all of them, one node by name, or the nodes of one submodel</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#8c959f"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .panel{fill:#fff;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .on{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .off{fill:#f6f8fa;stroke:#afb8c1}
+    .ton{fill:#bc4c00;font-weight:600}
+    .toff{fill:#8c959f}
+    .edge{fill:none;stroke:#8c959f;stroke-width:1.2;marker-end:url(#a)}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="289" rx="12"/>
+
+  <!-- no restriction -->
+  <text class="b mid" x="138" y="38" style="font-size:12px">no restriction</text>
+  <rect class="panel" x="25" y="50" width="226" height="195" rx="8"/>
+  <rect class="frame" x="129" y="68" width="104" height="136" rx="8"/>
+  <text class="note small" x="139" y="85">sub</text>
+  <path class="edge" d="M101 114H152"/>
+  <path class="edge" d="M101 172H152"/>
+  <rect class="on" x="47" y="100" width="54" height="28" rx="6"/>
+  <text class="mono mid ton" x="74" y="118.500">a</text>
+  <rect class="on" x="47" y="158" width="54" height="28" rx="6"/>
+  <text class="mono mid ton" x="74" y="176.500">b</text>
+  <rect class="on" x="154" y="100" width="54" height="28" rx="6"/>
+  <text class="mono mid ton" x="181" y="118.500">c</text>
+  <rect class="on" x="154" y="158" width="54" height="28" rx="6"/>
+  <text class="mono mid ton" x="181" y="176.500">d</text>
+  <text class="note mid" x="138" y="229">every node</text>
+
+  <!-- node_name -->
+  <text class="mono b mid" x="380" y="38" style="font-size:12px">node_name: b</text>
+  <rect class="panel" x="267" y="50" width="226" height="195" rx="8"/>
+  <rect class="frame" x="371" y="68" width="104" height="136" rx="8"/>
+  <text class="note small" x="381" y="85">sub</text>
+  <path class="edge" d="M343 114H394"/>
+  <path class="edge" d="M343 172H394"/>
+  <rect class="off" x="289" y="100" width="54" height="28" rx="6"/>
+  <text class="mono mid toff" x="316" y="118.500">a</text>
+  <rect class="on" x="289" y="158" width="54" height="28" rx="6"/>
+  <text class="mono mid ton" x="316" y="176.500">b</text>
+  <rect class="off" x="396" y="100" width="54" height="28" rx="6"/>
+  <text class="mono mid toff" x="423" y="118.500">c</text>
+  <rect class="off" x="396" y="158" width="54" height="28" rx="6"/>
+  <text class="mono mid toff" x="423" y="176.500">d</text>
+  <text class="note mid" x="380" y="229">only node b</text>
+
+  <!-- submodel_version_chain -->
+  <text class="mono b mid" x="622" y="38" style="font-size:12px">submodel_version_chain: sub</text>
+  <rect class="panel" x="509" y="50" width="226" height="195" rx="8"/>
+  <rect class="frame" x="613" y="68" width="104" height="136" rx="8"/>
+  <text class="note small" x="623" y="85">sub</text>
+  <path class="edge" d="M585 114H636"/>
+  <path class="edge" d="M585 172H636"/>
+  <rect class="off" x="531" y="100" width="54" height="28" rx="6"/>
+  <text class="mono mid toff" x="558" y="118.500">a</text>
+  <rect class="off" x="531" y="158" width="54" height="28" rx="6"/>
+  <text class="mono mid toff" x="558" y="176.500">b</text>
+  <rect class="on" x="638" y="100" width="54" height="28" rx="6"/>
+  <text class="mono mid ton" x="665" y="118.500">c</text>
+  <rect class="on" x="638" y="158" width="54" height="28" rx="6"/>
+  <text class="mono mid ton" x="665" y="176.500">d</text>
+  <text class="note mid" x="622" y="229">only the nodes of sub</text>
+
+  <rect class="on" x="262" y="261" width="14" height="14" rx="3"/>
+  <text class="note" x="283" y="273">sees the event</text>
+  <rect class="off" x="398" y="261" width="14" height="14" rx="3"/>
+  <text class="note" x="419" y="273">does not</text>
+</svg>

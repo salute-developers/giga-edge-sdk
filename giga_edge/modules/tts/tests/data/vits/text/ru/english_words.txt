@@ -1,0 +1,71 @@
+# A sample of CMUdict (github.com/cmusphinx/cmudict, BSD-2-Clause-like license, see english_words.LICENSE) for the tests.
+a AH0
+apple AE1 P AH0 L
+blinding B L AY1 N D IH0 NG
+bluetooth B L UW1 T UW2 TH
+cold K OW1 L D
+docs D AA1 K S
+dragons D R AE1 G AH0 N Z
+example IH0 G Z AE1 M P AH0 L
+finger F IH1 NG G ER0
+first F ER1 S T
+functional F AH1 NG K SH AH0 N AH0 L
+google G UW1 G AH0 L
+hello HH AH0 L OW1
+hmm HH M
+info IH1 N F OW0
+lights L AY1 T S
+music M Y UW1 Z IH0 K
+null N AH1 L
+online AO1 N L AY2 N
+page P EY1 JH
+queen K W IY1 N
+success S AH0 K S EH1 S
+telegram T EH1 L AH0 G R AE2 M
+the DH AH0
+think TH IH1 NG K
+user Y UW1 Z ER0
+weekend W IY1 K EH2 N D
+william W IH1 L Y AH0 M
+wood W UH1 D
+world W ER1 L D
+yahoo Y AA1 HH UW2
+yellow Y EH1 L OW0
+don't D OW1 N T
+auto AO1 T OW0
+week W IY1 K
+blue B L UW1
+note N OW1 T
+book B UH1 K
+tele T EH1 L IY0
+i AY1
+yesterday Y EH1 S T ER0 D EY2
+radio R EY1 D IY0 OW2
+website W EH1 B S AY2 T
+laptop L AE1 P T AA2 P
+celebrate S EH1 L AH0 B R EY2 T
+radios R EY1 D IY0 OW2 Z
+chrome K R OW1 M
+lose L UW1 Z
+glue G L UW1
+luna L UW1 N AH0
+ipad AY1 P AE2 D
+smirnov S M ER1 N AA0 F
+
+# Routing fixtures: zhanna, zhenya, zhukov and instagram are synthetic.
+soul S OW1 L
+shows SH OW1 Z
+saxophone S AE1 K S AH0 F OW2 N
+instagram IH1 N S T AH0 G R AE2 M
+hologram HH AA1 L AH0 G R AE2 M
+fireball F AY1 ER0 B AO2 L
+snowball S N OW1 B AO2 L
+textbook T EH1 K S T B UH2 K
+headphones HH EH1 D F OW2 N Z
+improv IH1 M P R AA2 V
+zhanna ZH AE1 N AH0
+zhenya ZH EH1 N Y AH0
+medvedev M EH1 D V AH0 D EH2 V
+nabokov N AE1 B AH0 K AA2 V
+zhukov ZH UW1 K AO0 V
+believer B AH0 L IY1 V ER0

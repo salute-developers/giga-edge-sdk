@@ -1,0 +1,119 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 03/12] qwen3: sliding window attention from GGUF
+
+Qwen3 takes the sliding window and the per-layer pattern from GGUF and uses
+an iSWA KV cache in the graph; the converter writes both keys.
+
+llama_kv_cache_iswa::state_read restored the base cache and then threw on
+the SWA part, leaving the restored cells of the base cache behind with
+whatever data the state carried. Hybrid and DSA memories already undo their
+first part this way (ggml-org/llama.cpp#27530); iSWA now does too. Seen as
+NaN logits on other sequences in test-save-load-state once Qwen3 became iSWA.
+---
+ conversion/qwen.py          |  4 ++++
+ src/llama-kv-cache-iswa.cpp | 15 +++++++++++++--
+ src/models/qwen3.cpp        | 31 +++++++++++++++++++++++++++----
+ 3 files changed, 44 insertions(+), 6 deletions(-)
+
+diff --git a/conversion/qwen.py b/conversion/qwen.py
+index 0b39187337065e6c5c08a0e15805eaec5aea4a6c..35fb1798073714e8ecaf1ba44d701664d591da11 100644
+--- a/conversion/qwen.py
++++ b/conversion/qwen.py
+@@ -223,6 +223,10 @@ class Qwen3Model(Qwen2Model):
+ 
+     def set_gguf_parameters(self):
+         super().set_gguf_parameters()
++        if (sliding_window := self.hparams.get("sliding_window")) is not None and self.hparams.get("use_sliding_window", True):
++            self.gguf_writer.add_sliding_window(sliding_window)
++            if "layer_types" in self.hparams:
++                self.gguf_writer.add_sliding_window_pattern([t == "sliding_attention" for t in self.hparams["layer_types"]])
+         if self.is_rerank:
+             self.gguf_writer.add_pooling_type(gguf.PoolingType.RANK)
+             self.gguf_writer.add_classifier_output_labels(["yes", "no"])
+diff --git a/src/llama-kv-cache-iswa.cpp b/src/llama-kv-cache-iswa.cpp
+index e91866469adf31aa4fa2b1190cc8432a38b61b24..b9b071f3313c78ca9b01de5d9d57848b3ed6d6eb 100644
+--- a/src/llama-kv-cache-iswa.cpp
++++ b/src/llama-kv-cache-iswa.cpp
+@@ -265,11 +265,22 @@ void llama_kv_cache_iswa::state_write(llama_io_write_i & io, llama_seq_id seq_id
+ }
+ 
+ void llama_kv_cache_iswa::state_read(llama_io_read_i & io, llama_seq_id seq_id, llama_state_seq_flags flags) {
+-    if ((flags & LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) == 0) {
++    const bool read_base = (flags & LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) == 0;
++
++    if (read_base) {
+         kv_base->state_read(io, seq_id, flags);
+     }
+ 
+-    kv_swa->state_read(io, seq_id, flags);
++    try {
++        kv_swa->state_read(io, seq_id, flags);
++    } catch (...) {
++        // the base part is already restored - undo it, so that a failed restore leaves nothing behind
++        if (read_base) {
++            kv_base->state_clear(seq_id);
++        }
++
++        throw;
++    }
+ }
+ 
+ llama_kv_cache * llama_kv_cache_iswa::get_base() const {
+diff --git a/src/models/qwen3.cpp b/src/models/qwen3.cpp
+index f4b2a2aebe0f8ce8df355314e5b0429111d25254..2c4b984e7361727c18408a191f50b6173f192740 100644
+--- a/src/models/qwen3.cpp
++++ b/src/models/qwen3.cpp
+@@ -3,6 +3,19 @@
+ void llama_model_qwen3::load_arch_hparams(llama_model_loader & ml) {
+     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+ 
++    // sliding window attention is enabled only when the key is present, so plain Qwen3 loads as before;
++    // the layout comes from the per-layer pattern array, or a period (default 6: five windowed layers, one full)
++    if (ml.get_key(LLM_KV_ATTENTION_SLIDING_WINDOW, hparams.n_swa, false) && hparams.n_swa > 0) {
++        hparams.swa_type = LLAMA_SWA_TYPE_STANDARD;
++        load_swa_pattern(ml, 6);
++
++        hparams.rope_freq_base_train_swa  = hparams.rope_freq_base_train;
++        hparams.rope_freq_scale_train_swa = hparams.rope_freq_scale_train;
++        ml.get_key(LLM_KV_ROPE_FREQ_BASE_SWA, hparams.rope_freq_base_train_swa, false);
++    } else {
++        hparams.swa_type = LLAMA_SWA_TYPE_NONE;
++    }
++
+     switch (hparams.n_layer()) {
+         case 28: type = hparams.n_embd == 1024 ? LLM_TYPE_0_6B : LLM_TYPE_1_7B; break;
+         case 36: type = hparams.n_embd == 2560 ? LLM_TYPE_4B : LLM_TYPE_8B; break;
+@@ -64,7 +77,11 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
+     // inp_pos - contains the positions
+     ggml_tensor * inp_pos = build_inp_pos();
+ 
+-    auto * inp_attn = build_attn_inp_kv();
++    // with sliding window the KV cache has two levels (full for global layers, small for windowed ones)
++    const bool use_iswa = hparams.swa_type != LLAMA_SWA_TYPE_NONE;
++
++    auto * inp_attn      = use_iswa ? nullptr : build_attn_inp_kv();
++    auto * inp_attn_iswa = use_iswa ? build_attn_inp_kv_iswa() : nullptr;
+ 
+     ggml_tensor * inp_out_ids = build_inp_out_ids();
+ 
+@@ -107,9 +124,15 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
+             cb(Kcur, "Kcur", il);
+             cb(Vcur, "Vcur", il);
+ 
+-            cur = build_attn(inp_attn,
+-                    model.layers[il].wo, model.layers[il].wo_b, model.layers[il].wo_s,
+-                    Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
++            if (use_iswa) {
++                cur = build_attn(inp_attn_iswa,
++                        model.layers[il].wo, model.layers[il].wo_b, model.layers[il].wo_s,
++                        Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
++            } else {
++                cur = build_attn(inp_attn,
++                        model.layers[il].wo, model.layers[il].wo_b, model.layers[il].wo_s,
++                        Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
++            }
+         }
+         if (il == n_layer - 1 && inp_out_ids) {
+             cur   = ggml_get_rows(ctx0,   cur, inp_out_ids);

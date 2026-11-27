@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="250" viewBox="0 0 760 250" role="img" aria-labelledby="title">
+  <title id="title">Runtime parts: each part is a data source with one or more submodel versions</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .tiny{font-size:10px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .panel{fill:#fff;stroke:#d0d7de}
+    .host{fill:#f6f8fa;stroke:#8c959f}
+    .chip{fill:#f6f8fa;stroke:#d0d7de}
+    .frame{fill:#f6f8fa;stroke:#8c959f;stroke-dasharray:5 4}
+    .card{fill:#fff;stroke:#0969da;stroke-width:1.5}
+    .slot{fill:#fff;stroke:#0969da;stroke-width:1.5;stroke-dasharray:5 4}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .val{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.5}
+    .off{fill:#f6f8fa;stroke:#afb8c1}
+    .feat{fill:#fbefff;stroke:#8250df;stroke-width:1.5}
+    .warn{fill:#fff1e5;stroke:#bc4c00;stroke-width:1.5}
+    .purple{fill:#8250df}
+    .orange{fill:#bc4c00}
+    .green{fill:#1a7f37}
+    .muted{fill:#8c959f}
+    .white{fill:#fff}
+    .tagon{fill:#0969da}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .back{fill:none;stroke:#59636e;stroke-width:1.5;stroke-dasharray:6 4;marker-end:url(#a)}
+    .line{fill:none;stroke:#8c959f;stroke-width:1.2}
+    .life{stroke:#afb8c1;stroke-dasharray:4 4}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="249" rx="12"/>
+
+  <rect class="panel" x="25" y="30" width="226" height="160" rx="8"/>
+  <text class="mono b" x="39" y="54">core</text>
+  <rect class="chip" x="163" y="40" width="74" height="20" rx="10"/>
+  <text class="note small mid" x="200" y="54">permanent</text>
+  <text class="note small" x="39" y="74">a directory or a tar</text>
+  <rect class="val" x="39" y="92" width="48" height="22" rx="11"/>
+  <text class="mono small mid" x="63" y="107">core</text>
+  <text class="mono note small" x="95" y="107">config.yaml</text>
+  <rect class="val" x="39" y="126" width="76" height="22" rx="11"/>
+  <text class="mono small mid" x="77" y="141">asr_small</text>
+  <text class="mono note small" x="123" y="141">small/config.yaml</text>
+
+  <rect class="panel" x="267" y="30" width="226" height="160" rx="8"/>
+  <text class="mono b" x="281" y="54">asr_pack</text>
+  <text class="note small" x="281" y="74">a tar, on disk or in memory</text>
+  <rect class="val" x="281" y="92" width="76" height="22" rx="11"/>
+  <text class="mono small mid" x="319" y="107">asr_large</text>
+  <text class="mono note small" x="365" y="107">config.yaml</text>
+
+  <rect class="panel" x="509" y="30" width="226" height="160" rx="8"/>
+  <text class="mono b" x="523" y="54">tts_pack</text>
+  <rect class="chip" x="647" y="40" width="74" height="20" rx="10"/>
+  <text class="note small mid" x="684" y="54">deferred</text>
+  <text class="note small" x="523" y="74">the data may arrive later</text>
+  <rect class="val" x="523" y="92" width="56" height="22" rx="11"/>
+  <text class="mono small mid" x="551" y="107">tts_v2</text>
+  <text class="mono note small" x="587" y="107">config.yaml</text>
+
+  <text class="note mid" x="380" y="214">A part is one data source that holds one or more submodel versions, each with its config.</text>
+  <text class="note mid" x="380" y="232">Version names are unique across all parts.</text>
+</svg>

@@ -1,0 +1,24 @@
+ruy: cmake_minimum_required before project(), so CMAKE_MSVC_RUNTIME_LIBRARY applies under MSVC.
+
+ruy calls project() before cmake_minimum_required(): at project() CMP0091 is not set yet (its default
+CMAKE_POLICY_DEFAULT_CMP0091 is applied only by cmake_minimum_required/cmake_policy(VERSION)), and MSVC gets /MD
+in CMAKE_CXX_FLAGS_<CONFIG>. The superbuild for windows_x64 gives every dependency the static CRT (/MT), so the
+tests with tflite (runtime, runtime_manager, model) do not link: LNK2038 RuntimeLibrary MD_DynamicRelease against
+MT_StaticRelease in ruy_*.lib. The order of the calls is as in the other dependencies.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index f4fe893..0e7ad31 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -12,10 +12,10 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
++cmake_minimum_required(VERSION 3.13)  # Copied from IREE
+ cmake_policy(SET CMP0012 NEW)
+ cmake_policy(SET CMP0048 NEW)
+ project(ruy CXX)
+-cmake_minimum_required(VERSION 3.13)  # Copied from IREE
+ set(CMAKE_CXX_STANDARD 14)
+ 
+ include(GNUInstallDirs)

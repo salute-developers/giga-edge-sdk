@@ -1,0 +1,19 @@
+jsoncpp: a range of policy versions in the installed jsoncppConfig.cmake instead of a bare 3.0.
+
+The template jsoncppConfig.cmake.in (our pin 69098a18) starts with cmake_policy(VERSION 3.0). The consumer runs this
+file on find_package(jsoncpp), here the configure of the SDK itself (cmake/Dependencies.cmake). CMake 4 removed the
+compatibility with versions below 3.5 and fails on this line unless CMAKE_POLICY_VERSION_MINIMUM is set. The range
+3.0...3.24 is as in the exports CMake generates itself (jsoncpp-targets.cmake next to it): CMake before 3.12 reads it
+as 3.0 (as before), newer ones take the policies of their version but not above 3.24; CMake 4 accepts it. The build of
+jsoncpp is not affected: the template is only substituted by configure_package_config_file on install. Remove with a
+pin bump if the new jsoncpp has the line fixed.
+
+--- a/jsoncppConfig.cmake.in
++++ b/jsoncppConfig.cmake.in
+@@ -1,5 +1,5 @@
+ cmake_policy(PUSH)
+-cmake_policy(VERSION 3.0)
++cmake_policy(VERSION 3.0...3.24)
+ 
+ @PACKAGE_INIT@
+ 

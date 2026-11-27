@@ -1,0 +1,5 @@
+# The parts of the model, graphs included, are downloaded from Hugging Face (README.md of the demo); only the list of
+# the parts lives here
+/*
+!/.gitignore
+!/meta.json

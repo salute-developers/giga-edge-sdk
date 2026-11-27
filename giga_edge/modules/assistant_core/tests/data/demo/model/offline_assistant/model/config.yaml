@@ -1,0 +1,630 @@
+# The session of the offline assistant: an activation opens it, EOU and ASR hear the request, function_calling
+# answers it, and the session ends with exactly one result.
+#
+# The input audio is 16000 Hz mono and comes in chunks of 50 ms: 16000 * 0.050 = 800 samples a chunk. A chunk is
+# one tick of the graph. The timers are counted in chunks (timer: 140 is 7 s), the audio buffers in samples
+# (max_size: 800 is one chunk).
+#
+# INPUTS:
+#   audio              vector<float>, one chunk.
+#   events_spotter     the events of the spotter submodel of the core.
+#   manual_activation  bool, opens a session without the word. Every tick with true opens a new one.
+#   reply_played       bool, the reply has been played to the end (reply_playback of the core): after a clarifying
+#                      question the session then listens again by itself.
+#   cancel_session     bool, closes a listening session without a request. A turn already sent to the LLM goes on.
+#   dialogue_reset     bool, clears the dialogue history of function_calling.
+#   debug_text         string, a request instead of the recognized text, to try tool calling without a voice (with
+#                      the feature assistant_debug_text).
+#   speech_synthesized bool, the reply is synthesized (tts_is_eos of the core): function_calling warms up the request
+#                      of the next turn.
+#   gender, pronoun    string, the persona of the host (of the core): function_calling picks the system prompt by
+#                      them.
+#
+# OUTPUTS:
+#   assistant_session  the session events for the client: exactly one result per start, in order.
+#   assistant_result   the parsed result of function_calling.
+#   user_query_text    the request of the session: the recognized text, or debug_text.
+#   reply_text         string, the text of the reply in the tick it is given, for the synthesis; empty otherwise.
+#   session_open       bool, the session is open: from the activation to the end of recognition, follow-up listening
+#                      included.
+
+version: offline_assistant.oss.1.0.0
+lib_version: 1.33
+
+nodes:
+  # Every activation, by word or by button, starts a new session and a new recognition; the session open before it is
+  # closed with an empty result and its unfinished turn is dropped.
+  - name: spotter_event_to_bool
+    type: has_activation
+    inputs:
+      events: events_spotter
+    outputs:
+      output: is_spotter_activation
+
+  # A reply with a clarifying question (listen_again of the session) is followed by a session of its own: it starts
+  # like a button session when the reply has been played, and the person answers without the word. The session
+  # reads its own state, so the value is that of the previous tick.
+  - name: session_listen_again_recursive
+    type: to_recursive_output_bool
+    inputs:
+      input: session_listen_again
+    outputs:
+      output: session_listen_again_before
+
+  - name: follow_up_start
+    type: logical_expression
+    inputs:
+      reply_played: reply_played
+      session_listen_again_before: session_listen_again_before
+    outputs:
+      result: follow_up_start
+    params:
+      expression: "reply_played && session_listen_again_before"
+
+  - name: manual_start
+    type: logical_expression
+    inputs:
+      manual_activation: manual_activation
+      follow_up_start: follow_up_start
+    outputs:
+      result: manual_start
+    params:
+      expression: "manual_activation || follow_up_start"
+
+  - name: session_start
+    type: logical_expression
+    inputs:
+      is_spotter_activation: is_spotter_activation
+      manual_start: manual_start
+    outputs:
+      result: session_start
+    params:
+      expression: "is_spotter_activation || manual_start"
+
+  # The session was opened by earlier ticks and continues in this one.
+  - name: session_continuation
+    type: logical_expression
+    inputs:
+      session_open_before: session_open_before
+      session_start: session_start
+    outputs:
+      result: session_continuation
+    params:
+      expression: "session_open_before && !session_start"
+
+  - name: no_session_continuation
+    type: logical_expression
+    inputs:
+      session_continuation: session_continuation
+    outputs:
+      result: no_session_continuation
+    params:
+      expression: "!session_continuation"
+
+  # The ASR rebase restarts the timer: a command that begins late gets the whole 7 s, not the rest of them. A word
+  # session therefore lasts up to 10 s: 3 s of the wait for speech and 7 s of the phrase.
+  - name: session_timer
+    type: timer
+    inputs:
+      start: asr_reset
+      reset: no_session_continuation
+    outputs:
+      alarm: is_timeout
+    params:
+      timer: 140 # * 50ms = 7s
+
+  # A word session without speech after the word ends after 3 s instead of session_timer: the word was said alone or
+  # with a short command that ASR already has. Heard speech stops this timer; session_timer still limits the phrase.
+  - name: word_session_start
+    type: logical_expression
+    inputs:
+      session_start: session_start
+      word_session: word_session
+    outputs:
+      result: word_session_start
+    params:
+      expression: "session_start && word_session"
+
+  - name: speech_wait_stop
+    type: logical_expression
+    inputs:
+      heard_speech: heard_speech
+      no_session_continuation: no_session_continuation
+    outputs:
+      result: speech_wait_stop
+    params:
+      expression: "heard_speech || no_session_continuation"
+
+  - name: speech_wait_timer
+    type: timer
+    inputs:
+      start: word_session_start
+      reset: speech_wait_stop
+    outputs:
+      alarm: speech_wait_timeout
+    params:
+      timer: 60 # * 50ms = 3s
+
+  # A session is closed by the end of phrase only after speech that EOU itself has heard since the activation: a pause
+  # after the word, an echo tail or noise must not close it empty while the person is getting ready to speak. The word
+  # alone keeps the session open for speech_wait_timer. The speech flag comes from EOU of the same tick, not from ASR
+  # (the session logic does not wait for ASR). EOU is reset at session_start, and its flag is false until it has
+  # heard the audio of this session.
+  - name: heard_speech
+    type: logical_expression
+    inputs:
+      eou_is_speech: eou_is_speech
+      heard_speech_before: heard_speech_before
+      session_start: session_start
+    outputs:
+      result: heard_speech
+    params:
+      expression: "(eou_is_speech || heard_speech_before) && !session_start"
+
+  - name: heard_speech_recursive
+    type: to_recursive_output_bool
+    inputs:
+      input: heard_speech
+    outputs:
+      output: heard_speech_before
+
+  - name: recognition_session_finish
+    type: logical_expression
+    inputs:
+      session_continuation: session_continuation
+      is_eou: is_eou
+      heard_speech: heard_speech
+      is_timeout: is_timeout
+      speech_wait_timeout: speech_wait_timeout
+      cancel_session: cancel_session
+    outputs:
+      result: recognition_session_finish
+    params:
+      expression: "session_continuation && ((is_eou && heard_speech) || is_timeout || speech_wait_timeout) && !cancel_session"
+
+  - name: cancel_session_finish
+    type: logical_expression
+    inputs:
+      session_continuation: session_continuation
+      cancel_session: cancel_session
+    outputs:
+      result: cancel_session_finish
+    params:
+      expression: "session_continuation && cancel_session"
+
+  - name: session_finish
+    type: logical_expression
+    inputs:
+      recognition_session_finish: recognition_session_finish
+      cancel_session_finish: cancel_session_finish
+    outputs:
+      result: session_finish
+    params:
+      expression: "recognition_session_finish || cancel_session_finish"
+
+  - name: session_listening
+    type: logical_expression
+    inputs:
+      session_start: session_start
+      session_continuation: session_continuation
+      session_finish: session_finish
+    outputs:
+      result: session_listening
+    params:
+      expression: "(session_start || session_continuation) && !session_finish"
+
+  # The submodel output is a copy: internal nodes do not read it.
+  - name: session_open
+    type: logical_expression
+    inputs:
+      session_listening: session_listening
+    outputs:
+      result: session_open
+    params:
+      expression: "session_listening"
+
+  - name: session_open_recursive
+    type: to_recursive_output_bool
+    inputs:
+      input: session_listening
+    outputs:
+      output: session_open_before
+
+  # ASR gets the 1.7 s that end at the activation: the word and the start of a command said right after it. EOU gets
+  # nothing from before the activation, so the word itself cannot close the session, and starts with the chunk of
+  # the activation tick. A manual start gives neither of them earlier audio: that is the tail of our own speech.
+  # After a long pause ASR, which has heard the word and the silence, can lose the first word of the command. So in
+  # a word session ASR is restarted once (a rebase) when EOU first hears speech later than 21 ticks (1.05 s) after
+  # the activation, with the last 500 ms as its history for the speech onset. A false speech flag only moves the
+  # start: all the audio after it is kept. Button and follow-up sessions have no rebase.
+  - name: word_session
+    type: logical_expression
+    inputs:
+      is_spotter_activation: is_spotter_activation
+      word_session_before: word_session_before
+      session_start: session_start
+      manual_start: manual_start
+    outputs:
+      result: word_session
+    params:
+      expression: "(is_spotter_activation && !manual_start) || (word_session_before && !session_start)"
+
+  - name: word_session_recursive
+    type: to_recursive_output_bool
+    inputs:
+      input: word_session
+    outputs:
+      output: word_session_before
+
+  - name: activation_recent
+    type: timer
+    inputs:
+      start: session_start
+    outputs:
+      alarm: activation_recent
+    params:
+      timer: 20
+      continuous_alarm: true
+      restart_strategy: restart
+
+  - name: asr_rebase
+    type: logical_expression
+    inputs:
+      session_continuation: session_continuation
+      heard_speech: heard_speech
+      heard_speech_before: heard_speech_before
+      activation_recent: activation_recent
+      word_session: word_session
+    outputs:
+      result: asr_rebase
+    params:
+      expression: "word_session && session_continuation && heard_speech && !heard_speech_before && !activation_recent"
+
+  - name: asr_reset
+    type: logical_expression
+    inputs:
+      session_start: session_start
+      asr_rebase: asr_rebase
+    outputs:
+      result: asr_reset
+    params:
+      expression: "session_start || asr_rebase"
+
+  - name: asr_keep_audio
+    type: logical_expression
+    inputs:
+      asr_rebase: asr_rebase
+    outputs:
+      result: asr_keep_audio
+    params:
+      expression: "!asr_rebase"
+
+  - name: audio_for_asr_first_chunk
+    type: accumulate_buffer
+    inputs:
+      input: audio
+      push: session_start
+      drop: manual_start
+    params:
+      max_size: 27200 # 27200 / 16000 = 1700ms
+      clear_after_push: false
+    outputs:
+      output: audio_for_asr_first_chunk
+
+  - name: audio_for_asr_subsequent_chunk
+    type: accumulate_buffer
+    inputs:
+      input: audio
+      push: session_continuation
+    params:
+      max_size: 800 # one chunk 50ms
+    outputs:
+      output: audio_for_asr_subsequent_chunk
+
+  - name: audio_for_asr
+    type: concat_vec_float
+    inputs: # at most one of them will be non-empty
+      input_1: audio_for_asr_first_chunk
+      input_2: audio_for_asr_subsequent_chunk
+    outputs:
+      output: audio_for_asr_full
+
+  # On a rebase tick ASR gets this history, the last 500 ms, instead of the chunk of the tick.
+  - name: asr_rebase_history
+    type: accumulate_buffer
+    inputs:
+      input: audio
+      push: asr_rebase
+    outputs:
+      output: asr_rebase_history
+    params:
+      max_size: 8000
+      clear_after_push: false
+
+  - name: asr_continuing_audio
+    type: data_gate
+    inputs:
+      input: audio_for_asr_full
+      gate: asr_keep_audio
+    outputs:
+      output: asr_continuing_audio
+
+  - name: audio_for_asr_rebased
+    type: concat_vec_float
+    inputs:
+      input_1: asr_continuing_audio
+      input_2: asr_rebase_history
+    outputs:
+      output: audio_for_asr
+
+  - name: eou_audio_tick
+    type: logical_expression
+    inputs:
+      session_continuation: session_continuation
+      is_spotter_activation: is_spotter_activation
+    outputs:
+      result: eou_audio_tick
+    params:
+      expression: "session_continuation || is_spotter_activation"
+
+  - name: audio_for_eou_chunk
+    type: accumulate_buffer
+    inputs:
+      input: audio
+      push: eou_audio_tick
+    params:
+      max_size: 800 # one chunk 50ms
+    outputs:
+      output: audio_for_eou_raw
+
+  # EOU would take the echo of our own speech at the start of follow-up listening for a phrase and close the session
+  # without words, so for the first 850 ms of follow-up listening EOU gets no audio, while ASR hears everything; after
+  # a button press EOU hears at once, since a short command would fit into the window.
+  - name: manual_echo_timer
+    type: timer
+    inputs:
+      start: manual_start
+      reset: session_start
+    outputs:
+      alarm: manual_echo
+    params:
+      timer: 16 # * 50ms + the firing tick ~= 850 ms
+      continuous_alarm: true
+
+  - name: eou_hears
+    type: logical_expression
+    inputs:
+      manual_echo: manual_echo
+      session_follow_up_before: session_follow_up_before
+      session_start: session_start
+    outputs:
+      result: eou_hears
+    params:
+      expression: "!(manual_echo && (session_follow_up_before || session_start))"
+
+  - name: audio_for_eou
+    type: data_gate
+    inputs:
+      input: audio_for_eou_raw
+      gate: eou_hears
+    outputs:
+      output: audio_for_eou
+
+  # eou submodel: audio_for_eou -> is_eou.
+  # asr submodel: audio_for_asr, session_finish -> recognized_text.
+
+  # Everything recognized since the current ASR start, including its initial audio history. A delayed first speech
+  # rebase discards the activation word and the preceding silence from both the audio and the accumulated text.
+  - name: accumulated_text
+    type: accumulate_text
+    inputs:
+      input: recognized_text
+      restart: asr_reset
+      push: recognition_session_finish
+      drop: cancel_session_finish
+    outputs:
+      output: asr_query_text_raw
+
+  # Strip the activation word only while its audio remains in ASR history. A rebase removes that history and
+  # drops activation_word, so command-only text bypasses stripping even if it contains similar words.
+  # Without a word event, manual text also passes through. Otherwise allow a tail before the word and repeated names.
+  - name: activation_word_event
+    type: extract_event_hotword
+    inputs:
+      events: events_spotter
+    outputs:
+      hotword: activation_word_event
+    params:
+      asr_variable: custom_spotter
+      # Spotter event -> the forms of the word in the ASR text, comma-separated: the four words of the demo and the
+      # ways the recognizer writes them (the stripping allows a typo per three letters of a form).
+      asr_forms: {wake: "гига ёж,гига ёжик,ёж,ёжик,ёш,гигаж,гигажик,дигаёж,гига йош,гига ёрш,gigaeosh"}
+
+  - name: activation_word
+    type: accumulate_text
+    inputs:
+      input: activation_word_event
+      restart: session_start
+      push: recognition_session_finish
+      drop: asr_rebase
+    outputs:
+      output: activation_word
+
+  - name: strip_activation_word
+    type: strip_leading_words
+    inputs:
+      input: asr_query_text_raw
+      words: activation_word
+    outputs:
+      output: asr_query_text
+    params:
+      repeat: true
+      max_skipped_tokens: 2
+      typos_per_letters: 3
+      split_glued: true
+
+  # A new word and a session timeout drop the unfinished LLM turn: otherwise it would finish (and call MCP) after the
+  # session is closed, which happens with debug_text without an activation.
+  - name: fc_cancel
+    type: logical_expression
+    inputs:
+      session_start: session_start
+      session_timed_out_before: session_timed_out_before
+    outputs:
+      result: fc_cancel
+    params:
+      expression: "session_start || session_timed_out_before"
+
+  - name: assistant_session
+    type: assistant_session
+    inputs:
+      session_start: session_start
+      manual_activation: manual_start
+      session_finish: session_finish
+      query_text: query_text_result
+      assistant_result: fc_assistant_result
+      session_cancelled: cancel_session_finish
+    outputs:
+      events: assistant_session
+      follow_up: session_follow_up
+      timed_out: session_timed_out
+      listen_again: session_listen_again
+      reply_text: reply_text
+    params:
+      fallback_text: "Извините, что-то пошло не так."
+      listen_again_marker: "<await_user>"
+      max_listen_again: 2
+      reply_timeout: 160 # * 50ms = 8s without a reply to the request: the result is fallback_text
+      rules_on_failure: true # a failed LLM turn, an empty reply or one cut off by the limit also give fallback_text
+      local_debug_enabled: true
+
+  # The session gave up on a timeout: the LLM turn is dropped on the next tick (FC is above the session in the graph
+  # order).
+  - name: session_timed_out_recursive
+    type: to_recursive_output_bool
+    inputs:
+      input: session_timed_out
+    outputs:
+      output: session_timed_out_before
+
+  # follow_up tells function_calling that the request answers a clarifying question of the assistant. The session
+  # reads the FC result, so the value is that of the previous tick.
+  - name: session_follow_up_recursive
+    type: to_recursive_output_bool
+    inputs:
+      input: session_follow_up
+    outputs:
+      output: session_follow_up_before
+
+  # A recursive value is not passed into a submodel: FC gets it as a value of this tick; the start tick of a new
+  # session is not a continuation yet.
+  - name: follow_up
+    type: logical_expression
+    inputs:
+      follow_up_before: session_follow_up_before
+      session_start: session_start
+    outputs:
+      result: follow_up
+    params:
+      expression: "follow_up_before && !session_start"
+
+  # The dialogue history lives for 45 s after the last activation: consecutive follow-ups ("and now in the bedroom")
+  # stay in it, while an old conversation (the light an hour ago) does not confuse a new request.
+  - name: context_timer
+    type: timer
+    inputs:
+      start: session_start
+    outputs:
+      alarm: context_timeout
+    params:
+      timer: 900 # * 50ms = 45 s
+      restart_strategy: restart
+
+  - name: fc_dialogue_reset
+    type: logical_expression
+    inputs:
+      dialogue_reset: dialogue_reset
+      context_timeout: context_timeout
+    outputs:
+      result: fc_dialogue_reset
+    params:
+      expression: "dialogue_reset || context_timeout"
+
+  # The submodel outputs are written once at the end: inside the version the result and the text live under
+  # fc_assistant_result and query_text_result.
+  - name: publish_assistant_result
+    type: assistant_result_relay
+    inputs:
+      input: fc_assistant_result
+    outputs:
+      assistant_result: assistant_result
+
+  - name: publish_user_query_text
+    type: coalesce_text
+    inputs:
+      second: query_text_result
+    outputs:
+      text: user_query_text
+
+submodels:
+  - id: query_text
+    inputs:
+      primary: debug_text
+      fallback: asr_query_text
+    outputs:
+      text: query_text_result
+
+  - id: eou
+    inputs:
+      audio: audio_for_eou
+      need_reset: session_start
+    outputs:
+      is_eou: is_eou
+      is_speech: eou_is_speech
+
+  - id: asr
+    inputs:
+      audio: audio_for_asr
+      is_eou: session_finish
+      need_reset: asr_reset
+    outputs:
+      text: recognized_text
+
+  - id: function_calling
+    inputs:
+      audio: audio
+      text: query_text_result
+      dialogue_reset: fc_dialogue_reset
+      cancel: fc_cancel
+      follow_up: follow_up
+      speech_synthesized: speech_synthesized
+      gender: gender
+      pronoun: pronoun
+    outputs:
+      assistant_result: fc_assistant_result
+
+default_submodels:
+  query_text: offline_assistant.query_text
+  eou: offline_assistant.eou_stub
+  asr: offline_assistant.asr_stub
+  function_calling: offline_assistant.function_calling_stub
+
+features:
+  - feature_ids: [offline_assistant]
+    submodel_id: eou
+    submodel_version: eou
+    require_mode: recursive
+
+  - feature_ids: [offline_assistant]
+    submodel_id: asr
+    submodel_version: asr
+    require_mode: recursive
+
+  - feature_ids: [offline_assistant]
+    submodel_id: function_calling
+    submodel_version: function_calling
+    require_mode: recursive
+
+  - feature_ids: [assistant_debug_text]
+    submodel_id: query_text
+    submodel_version: offline_assistant.query_text_debug

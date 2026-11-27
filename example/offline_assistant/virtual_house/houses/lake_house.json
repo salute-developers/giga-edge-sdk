@@ -1,0 +1,67 @@
+{
+  "name": "Дом у озера",
+  "rooms": [
+    {"name": "Кухня",    "x": -5.75, "z": -2, "w": 4.5, "d": 4, "floor": "#748185"},
+    {"name": "Ванная",   "x": -2,    "z": -2, "w": 3,   "d": 4, "floor": "#7d919a"},
+    {"name": "Спальня",  "x": 1.75,  "z": -2, "w": 4.5, "d": 4, "floor": "#9a8064"},
+    {"name": "Гараж",    "x": 6,     "z": -2, "w": 4,   "d": 4, "floor": "#6f7477"},
+    {"name": "Гостиная", "x": -5.25, "z": 2,  "w": 5.5, "d": 4, "floor": "#927257"},
+    {"name": "Прихожая", "x": -1,    "z": 2,  "w": 3,   "d": 4, "floor": "#69787c"},
+    {"name": "Кабинет",  "x": 2.25,  "z": 2,  "w": 3.5, "d": 4, "floor": "#8c7966"},
+    {"name": "Детская",  "x": 6,     "z": 2,  "w": 4,   "d": 4, "floor": "#a89980"}
+  ],
+  "assistant": {"area": "Гостиная", "pos": [-5.5, 0.465, 2.75]},
+  "devices": [
+    {"domain": "vacuum", "name": "Робот-пылесос", "area": "Гостиная", "facing": "+z", "pos": [-6.0, 0, 0.08], "values": {"on_off": false, "battery_percentage": 80}},
+    {"domain": "light", "name": "Свет на кухне", "area": "Кухня", "mount": "ceiling", "pos": [-5.4, 2.05, -1.5], "values": {"on_off": true, "light_brightness": 70, "light_colour": null, "light_colour_temp": 60}},
+    {"domain": "light", "name": "Подсветка столешницы", "area": "Кухня", "kind": "led_strip", "facing": "+z", "length": 3.0, "pos": [-5.65, 1.5, -3.95], "values": {"on_off": true, "light_brightness": 50, "light_colour": null, "light_colour_temp": 30}},
+    {"domain": "switch", "name": "Чайник", "area": "Кухня", "kind": "kettle", "pos": [-4.5, 1.04, -3.55], "values": {"on_off": false}},
+    {"domain": "valve", "name": "Кран воды", "area": "Кухня", "pos": [-3.85, 0.58, -3.6], "values": {"open_set": "open"}},
+    {"domain": "binary_sensor", "device_class": "moisture", "name": "Датчик протечки на кухне", "area": "Кухня", "pos": [-6.5, 0.1, -2.9], "values": {"water_leak_state": false}},
+    {"domain": "binary_sensor", "device_class": "gas", "name": "Датчик газа", "area": "Кухня", "facing": "+z", "pos": [-5.2, 1.9, -3.92], "values": {"gas_leak_state": false}},
+    {"domain": "cover", "device_class": "blind", "name": "Жалюзи на кухне", "area": "Кухня", "length": 2.2, "pos": [-7.86, 0, -1.6], "values": {"open_percentage": 100}},
+
+    {"domain": "light", "name": "Свет в ванной", "area": "Ванная", "mount": "ceiling", "pos": [-2.0, 2.05, -2.2], "values": {"on_off": false, "light_brightness": 80, "light_colour": null, "light_colour_temp": 80}},
+    {"domain": "climate", "name": "Тёплый пол", "area": "Ванная", "kind": "hvac_underfloor_heating", "size": [1.6, 1.3], "pos": [-1.95, 0.085, -1.55], "values": {"on_off": true, "hvac_temp_set": 27, "temperature": 25.5}},
+    {"domain": "binary_sensor", "device_class": "moisture", "name": "Датчик протечки в ванной", "area": "Ванная", "pos": [-0.85, 0.1, -1.6], "values": {"water_leak_state": false}},
+    {"domain": "sensor", "device_class": "humidity", "name": "Датчик влажности", "area": "Ванная", "facing": "+z", "pos": [-0.9, 1.5, -3.96], "values": {"humidity": 58}},
+
+    {"domain": "light", "name": "Свет в спальне", "area": "Спальня", "mount": "ceiling", "pos": [1.9, 2.1, -1.5], "values": {"on_off": false, "light_brightness": 60, "light_colour": null, "light_colour_temp": 40}},
+    {"domain": "light", "name": "Ночник в спальне", "area": "Спальня", "base": 0.76, "pos": [-0.15, 1.12, -3.6], "values": {"on_off": true, "light_brightness": 25, "light_colour": null, "light_colour_temp": 5}},
+    {"domain": "cover", "name": "Шторы в спальне", "area": "Спальня", "facing": "+z", "length": 2.5, "pos": [1.5, 1.35, -3.76], "values": {"open_percentage": 0}},
+    {"domain": "humidifier", "name": "Увлажнитель", "area": "Спальня", "pos": [3.4, 0, -1.6], "values": {"on_off": true, "hvac_humidity_set": 50}},
+    {"domain": "climate", "name": "Радиатор", "area": "Спальня", "kind": "hvac_radiator", "facing": "+z", "pos": [3.3, 0, -3.8], "values": {"on_off": true, "hvac_temp_set": 22, "temperature": 21.5}},
+    {"domain": "sensor", "device_class": "temperature", "name": "Датчик температуры в спальне", "area": "Спальня", "facing": "+z", "pos": [3.3, 1.45, -3.96], "values": {"temperature": 21.5}},
+
+    {"domain": "light", "name": "Свет в гараже", "area": "Гараж", "mount": "ceiling", "pos": [6.0, 2.2, -2.6], "values": {"on_off": false, "light_brightness": 100, "light_colour": null, "light_colour_temp": 90}},
+    {"domain": "cover", "device_class": "garage", "name": "Ворота гаража", "area": "Гараж", "slide": 1, "pos": [7.95, 0, -1.9], "values": {"open_percentage": 0}},
+    {"domain": "climate", "name": "Котёл", "area": "Гараж", "kind": "hvac_boiler", "facing": "+z", "pos": [7.2, 1.3, -3.75], "values": {"on_off": true, "hvac_temp_set": 24, "temperature": 23}},
+    {"domain": "switch", "name": "Насос", "area": "Гараж", "kind": "relay", "facing": "+z", "pos": [6.4, 1.5, -3.92], "values": {"on_off": true}},
+    {"domain": "binary_sensor", "device_class": "smoke", "name": "Датчик дыма", "area": "Гараж", "facing": "+z", "pos": [5.6, 2.0, -3.92], "values": {"smoke_state": false}},
+
+    {"domain": "light", "name": "Люстра", "area": "Гостиная", "mount": "ceiling", "pos": [-5.4, 2.2, 2.2], "values": {"on_off": true, "light_brightness": 65, "light_colour": null, "light_colour_temp": 40}},
+    {"domain": "light", "name": "Торшер", "area": "Гостиная", "pos": [-7.5, 1.65, 3.75], "values": {"on_off": true, "light_brightness": 40, "light_colour": null, "light_colour_temp": 10}},
+    {"domain": "light", "name": "Подсветка телевизора", "area": "Гостиная", "kind": "led_strip", "length": 1.65, "pos": [-2.85, 0.9, 1.6], "values": {"on_off": false, "light_brightness": 50, "light_colour": null, "light_colour_temp": 100}},
+    {"domain": "media_player", "device_class": "tv", "name": "Телевизор", "area": "Гостиная", "facing": "-x", "pos": [-3.0, 1.15, 1.6], "values": {"on_off": false, "volume_int": 25, "mute": false}},
+    {"domain": "climate", "name": "Кондиционер", "area": "Гостиная", "kind": "hvac_ac", "hvac_mode": "cool", "pos": [-7.87, 1.95, 0.6], "values": {"on_off": false, "hvac_temp_set": 23, "temperature": 24.5}},
+    {"domain": "cover", "name": "Шторы в гостиной", "area": "Гостиная", "length": 2.4, "pos": [-7.76, 1.3, 2.45], "values": {"open_percentage": 100}},
+    {"domain": "sensor", "device_class": "temperature", "name": "Датчик температуры в гостиной", "area": "Гостиная", "pos": [-7.96, 1.3, 0.5], "values": {"temperature": 24.5}},
+
+    {"domain": "light", "name": "Свет в прихожей", "area": "Прихожая", "mount": "ceiling", "pos": [-1.0, 2.1, 1.8], "values": {"on_off": false, "light_brightness": 70, "light_colour": null, "light_colour_temp": 50}},
+    {"domain": "binary_sensor", "device_class": "door", "name": "Входная дверь", "area": "Прихожая", "facing": "+z", "pos": [-1.0, 0, 3.95], "values": {"doorcontact_state": false}},
+    {"domain": "binary_sensor", "device_class": "motion", "name": "Датчик движения", "area": "Прихожая", "facing": "+z", "pos": [-0.4, 0.76, 0.4], "values": {"pir": false}},
+
+    {"domain": "light", "name": "Свет в кабинете", "area": "Кабинет", "mount": "ceiling", "pos": [2.25, 2.1, 2.3], "values": {"on_off": false, "light_brightness": 80, "light_colour": null, "light_colour_temp": 70}},
+    {"domain": "light", "name": "Настольная лампа", "area": "Кабинет", "base": 0.82, "pos": [2.0, 1.25, 0.45], "values": {"on_off": true, "light_brightness": 60, "light_colour": null, "light_colour_temp": 55}},
+    {"domain": "switch", "name": "Розетка в кабинете", "area": "Кабинет", "pos": [3.55, 0.96, 0.5], "values": {"on_off": true}},
+    {"domain": "fan", "name": "Вентилятор", "area": "Кабинет", "pos": [1.2, 0, 3.3], "values": {"on_off": false}},
+
+    {"domain": "light", "name": "Свет в детской", "area": "Детская", "mount": "ceiling", "pos": [6.0, 2.1, 2.2], "values": {"on_off": true, "light_brightness": 55, "light_colour": null, "light_colour_temp": 30}},
+    {"domain": "light", "name": "Ночник в детской", "area": "Детская", "base": 0.75, "pos": [6.6, 1.1, 0.4], "values": {"on_off": false, "light_brightness": 20, "light_colour": null, "light_colour_temp": 0}},
+    {"domain": "climate", "name": "Обогреватель", "area": "Детская", "pos": [4.35, 0, 1.4], "values": {"on_off": false, "hvac_temp_set": 22, "temperature": 22.5}}
+  ],
+  "scenarios": [
+    {"domain": "scene", "id": "good_night", "name": "Спокойной ночи", "set": [{"domain": "light", "values": {"on_off": false}}, {"name": "Вентилятор", "values": {"on_off": true}}]},
+    {"domain": "script", "id": "good_morning", "name": "Доброе утро", "set": [{"name": "Шторы в спальне", "values": {"open_percentage": 100}}, {"name": "Свет на кухне", "values": {"on_off": true}}, {"name": "Чайник", "values": {"on_off": true}}]}
+  ]
+}

@@ -1,0 +1,189 @@
+# The core of the offline assistant demo: a session is opened by the wake word (the spotter submodel), a manual
+# activation (Enter) or a text request, then come recognition and the LLM with function calling of the
+# offline_assistant submodel; the action goes to the MCP Server of Home Assistant (the client connects it as the
+# server "ha"). The reply is text; with the tts part (the tts feature) the graph also speaks it, and after a
+# clarifying question it listens again by itself when the reply has been played.
+#
+# The core describes only the slots: recognition, end of phrase and function calling live in the offline_assistant
+# part and are enabled by the client features (offline_assistant, assistant_debug_text, see main.cpp).
+#
+# The input audio is 16000 Hz mono and comes in chunks of 50 ms: 16000 * 0.050 = 800 samples a chunk. The client
+# feeds every input once per chunk, so a chunk is one tick of the graph, and the timers of the parts are counted in
+# chunks (timer: 140 is 7 s).
+#
+# INPUTS:
+#   audio             vector<float>, one chunk.
+#   debug_text        string, a text request instead of recognition (an empty string means no request).
+#   manual_activation bool, open a session.
+#   cancel_session    bool, close a listening session without a request. A turn already sent to the LLM goes on.
+#   dialogue_reset    bool, forget the dialogue history.
+#
+# OUTPUTS:
+#   assistant_session  the session start and exactly one result, in order.
+#   assistant_result   the result of the LLM turn.
+#   user_query_text    the text of the session request: recognized or debug_text.
+#   tts_audio          SynthesizedAudio, the spoken reply as a stream; is_last ends a phrase. The client plays it
+#                      as it comes.
+num_threads: 3
+version: offline_assistant.core.oss.1.0.0
+lib_version: 1.34
+
+model_environments:
+  mcp:
+    type: mcp
+    mcp:
+      client_name: giga_edge_demo
+      protocol_version: "2025-11-25"
+      client_version: "1.0.0"
+      default_request_timeout_ms: 10000
+      # Less than reply_timeout of the session (8 s): a call that hangs ends as a tool error inside the turn, and the
+      # model says what failed.
+      default_tool_call_timeout_ms: 5000
+      default_read_resource_timeout_ms: 10000
+      default_ping_timeout_ms: 10000
+      thread_pool_size: 2
+      # HA sends no change notifications: the house context is read on connection, then ha_catalog rereads it.
+      resource_hydration:
+        read_resources_on_list: true
+        subscribe_to_subscribable_resources: false
+        preferred_read_resource_match_phrases:
+          - "homeassistant://assist/context-snapshot"
+
+nodes:
+  # The persona of the assistant comes from the client (the personalization capability, main.cpp sets a male voice
+  # and the formal address): function_calling picks the system prompt by the gender and the pronoun, and tts speaks
+  # with the voice of the persona.
+  - name: persona
+    type: persona
+    inputs:
+      tick: manual_activation
+    outputs:
+      gender: persona_gender
+      pronoun: persona_pronoun
+      tts_voice: persona_tts_voice
+    params:
+      voices:
+        male: {gender: male, tts_voice: voice_2}
+        female: {gender: female, tts_voice: voice_1}
+
+  # tts speaks the reply of offline_assistant, and offline_assistant wants to know when the reply is synthesized and
+  # when it has been played. These two go back to it with the next chunk, as recursive values. A recursive value
+  # cannot enter a submodel and a node needs a non-recursive input (giga_edge/lib/node/README.md), so each goes
+  # through an expression with manual_activation: a session opened by hand in this chunk waits for neither.
+  - name: tts_is_eos_recursive
+    type: to_recursive_output_bool
+    inputs:
+      input: tts_is_eos
+    outputs:
+      output: tts_is_eos_before
+
+  - name: speech_synthesized
+    type: logical_expression
+    inputs:
+      tts_is_eos_before: tts_is_eos_before
+      manual_activation: manual_activation
+    outputs:
+      result: speech_synthesized
+    params:
+      expression: "tts_is_eos_before && !manual_activation"
+
+  # The graph does not hear the speaker: the end of the playback is counted from the length of the audio, as if the
+  # client played every chunk at once and in real time. tail_ms is for the delay of the sound device.
+  # playing is true while the client still has audio of the reply to play, and playing_tail_ms after that: the delays
+  # of the speaker and the microphone (about 0.1 s) and the lag of the wake word model, whose event comes about 0.6 s
+  # after the end of the word. The event of a word said after the reply comes at least 0.9 s after the start of the
+  # word, later than the tail.
+  - name: reply_playback
+    type: tts_playback_timer
+    inputs:
+      audio: tts_audio
+    outputs:
+      played: reply_played_now
+      playing: reply_playing_now
+    params:
+      tick_ms: 50
+      tail_ms: 200
+      playing_tail_ms: 700
+
+  - name: reply_played_recursive
+    type: to_recursive_output_bool
+    inputs:
+      input: reply_played_now
+    outputs:
+      output: reply_played_before
+
+  - name: reply_played
+    type: logical_expression
+    inputs:
+      reply_played_before: reply_played_before
+      manual_activation: manual_activation
+    outputs:
+      result: reply_played
+    params:
+      expression: "reply_played_before && !manual_activation"
+
+  # While the reply plays the wake word does not open a session: the assistant would hear itself and take its reply
+  # for the next request. A button and the listening after a question open sessions as usual. playing of a tick says
+  # that the client plays the reply in the next chunk, so the value goes back to the events of that chunk. Without the
+  # part tts there is no audio and nothing is suppressed.
+  - name: reply_playing_recursive
+    type: to_recursive_output_bool
+    inputs:
+      input: reply_playing_now
+    outputs:
+      output: reply_playing
+
+  - name: suppress_wake_on_reply
+    type: change_event_type
+    inputs:
+      input_events: events_spotter
+      flag: reply_playing
+    outputs:
+      events: wake_events
+    params:
+      input_event_type: activation
+      output_event_type: subactivation
+
+submodels:
+  - id: spotter
+    inputs:
+      audio: audio
+    outputs:
+      hotword_events: events_spotter
+
+  - id: offline_assistant
+    inputs:
+      audio: audio
+      events_spotter: wake_events
+      manual_activation: manual_activation
+      cancel_session: cancel_session
+      dialogue_reset: dialogue_reset
+      debug_text: debug_text
+      speech_synthesized: speech_synthesized
+      reply_played: reply_played
+      gender: persona_gender
+      pronoun: persona_pronoun
+    outputs:
+      assistant_session: assistant_session
+      assistant_result: assistant_result
+      user_query_text: user_query_text
+      reply_text: reply_text
+
+  # The end of a phrase (tts_is_eos) tells function_calling to warm up the next turn.
+  - id: tts
+    inputs:
+      text: reply_text
+      voice: persona_tts_voice
+    outputs:
+      audio: tts_audio
+      is_eos: tts_is_eos
+
+default_submodels:
+  spotter: spotter.gigaezh
+  offline_assistant: offline_assistant
+  tts: offline_assistant.tts_stub
+
+features:
+  - feature_ids: [tts]
+    submodel_id: tts
+    submodel_version: tts

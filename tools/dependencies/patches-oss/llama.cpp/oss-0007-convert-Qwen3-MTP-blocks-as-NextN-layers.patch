@@ -1,0 +1,94 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Giga Edge SDK <noreply@giga-edge-sdk.invalid>
+Date: Thu, 12 Nov 2026 13:31:52 +0000
+Subject: [PATCH 07/12] convert: Qwen3 MTP blocks as NextN layers
+
+The MTP blocks of a checkpoint (model.mtp.layers.k.*, num_nextn_predict_layers)
+are written as nextn layers after the main ones and use the sliding window
+like the local layers of the main model. num_experts_per_tok is dropped from
+the config of the dense model.
+---
+ conversion/qwen.py        | 37 ++++++++++++++++++++++++++++++++++++-
+ gguf-py/gguf/constants.py |  4 ++++
+ 2 files changed, 40 insertions(+), 1 deletion(-)
+
+diff --git a/conversion/qwen.py b/conversion/qwen.py
+index 9ba5c25908f4ddbf24d186ec880e7cb8cce153f7..db50d580c24b4bf660c1ad6b7b997ad1acaebe47 100644
+--- a/conversion/qwen.py
++++ b/conversion/qwen.py
+@@ -168,6 +168,10 @@ class Qwen3Model(Qwen2Model):
+     token_false_id: int | None = None
+     token_true_id: int | None = None
+ 
++    # MTP blocks (`model.mtp.layers.k.*`) are written as nextn layers after the main ones
++    supports_mtp_export = True
++    _n_trunk: int = 0
++
+     def __init__(self, *args, **kwargs):
+         super().__init__(*args, **kwargs)
+ 
+@@ -175,9 +179,37 @@ class Qwen3Model(Qwen2Model):
+         hparams = ModelBase.load_hparams(self.dir_model, is_mistral_format=False)
+         self.origin_hf_arch = hparams.get('architectures', [None])[0]
+ 
++        # dense Qwen3 has no experts, but some configs carry MoE fields left by the trainer
++        self.hparams.pop("num_experts_per_tok", None)
++
++        self.n_mtp = 0 if self.no_mtp else int(self.hparams.get("num_nextn_predict_layers") or 0)
++        if self.n_mtp > 0:
++            self.block_count += self.n_mtp
++            self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
++
+         if self._is_qwen3_reranker():
+             self._find_rerank_config()
+ 
++    def index_tensors(self, remote_hf_model_id: str | None = None):
++        type(self)._n_trunk = self.hparams["num_hidden_layers"]
++        return super().index_tensors(remote_hf_model_id=remote_hf_model_id)
++
++    @classmethod
++    def filter_tensors(cls, item):
++        name, gen = item
++        if name.startswith("model.mtp.layers."):
++            if cls.no_mtp:
++                return None
++            _, _, _, k, rest = name.split(".", 4)
++            rest = {
++                "fc.weight":                    "eh_proj.weight",
++                "pre_fc_norm_embedding.weight": "enorm.weight",
++                "pre_fc_norm_hidden.weight":    "hnorm.weight",
++                "model.norm.weight":            "shared_head.norm.weight",
++            }.get(rest, rest.removeprefix("model.layers.0."))
++            name = f"model.layers.{cls._n_trunk + int(k)}.{rest}"
++        return super().filter_tensors((name, gen))
++
+     def _is_qwen3_reranker(self) -> bool:
+         readme_path = self.dir_model / "README.md"
+         readme_text = ""
+@@ -226,7 +258,10 @@ class Qwen3Model(Qwen2Model):
+         if (sliding_window := self.hparams.get("sliding_window")) is not None and self.hparams.get("use_sliding_window", True):
+             self.gguf_writer.add_sliding_window(sliding_window)
+             if "layer_types" in self.hparams:
+-                self.gguf_writer.add_sliding_window_pattern([t == "sliding_attention" for t in self.hparams["layer_types"]])
++                # MTP layers use the same window as the local layers of the main model
++                self.gguf_writer.add_sliding_window_pattern([t == "sliding_attention" for t in self.hparams["layer_types"]] + [True] * self.n_mtp)
++        if self.n_mtp > 0:
++            self.gguf_writer.add_nextn_predict_layers(self.n_mtp)
+         if self.is_rerank:
+             self.gguf_writer.add_pooling_type(gguf.PoolingType.RANK)
+             self.gguf_writer.add_classifier_output_labels(["yes", "no"])
+diff --git a/gguf-py/gguf/constants.py b/gguf-py/gguf/constants.py
+index 1e0a6b18ac6bd433810a74c86ce0da80283a8bf6..962d8e0fcea3de7c7f5fee9f0b81fc6f5d44a92d 100644
+--- a/gguf-py/gguf/constants.py
++++ b/gguf-py/gguf/constants.py
+@@ -2812,6 +2812,10 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
+         MODEL_TENSOR.FFN_GATE,
+         MODEL_TENSOR.FFN_DOWN,
+         MODEL_TENSOR.FFN_UP,
++        MODEL_TENSOR.NEXTN_EH_PROJ,
++        MODEL_TENSOR.NEXTN_ENORM,
++        MODEL_TENSOR.NEXTN_HNORM,
++        MODEL_TENSOR.NEXTN_SHARED_HEAD_NORM,
+     ],
+     MODEL_ARCH.QWEN3MOE: [
+         MODEL_TENSOR.TOKEN_EMBD,

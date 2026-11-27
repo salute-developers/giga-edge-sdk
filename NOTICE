@@ -1,0 +1,80 @@
+giga-edge-sdk includes the following third-party software. Each component is
+distributed under its own license; the full texts are in the listed files.
+
+
+wav2letter++
+  https://github.com/flashlight/wav2letter
+  Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+  License: BSD-3-Clause, see giga_edge/modules/features/contrib/asr_features/LICENSE
+  Used in: giga_edge/modules/features/contrib/asr_features (derived from
+  src/libraries/feature, modified)
+
+
+librosa
+  https://github.com/librosa/librosa
+  Copyright (c) 2013--2017, librosa development team.
+  License: ISC (below)
+  Used in: giga_edge/modules/features/contrib/asr_features/tri_filterbank.cc
+  (Slaney mel scale ported from hz_to_mel and mel_to_hz)
+
+  Permission to use, copy, modify, and/or distribute this software for any
+  purpose with or without fee is hereby granted, provided that the above
+  copyright notice and this permission notice appear in all copies.
+
+  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+
+OpenGrm Thrax
+  https://www.opengrm.org/twiki/bin/view/GRM/Thrax
+  Copyright 2005-2020 Google LLC
+  License: Apache-2.0, see giga_edge/contrib/thrax/LICENSE
+  Used in: giga_edge/contrib/thrax/paths.h (modified from Thrax 1.3.8,
+  src/include/thrax/algo/paths.h)
+
+
+KISS FFT
+  https://github.com/mborgerding/kissfft
+  Copyright (c) 2003-2010 Mark Borgerding. All rights reserved.
+  License: BSD-3-Clause, see COPYING in its source tree
+  (test/doit.c: Unlicense, see LICENSES/Unlicense)
+  Not included in this repository: the dependency build (tools/dependencies)
+  builds it (tools/dependencies/packages/kissfft) from upstream commit
+  3050076ab30ed15e4cec8ce68d93f6e5bb82dee3 with tools/dependencies/patches/kissfft.
+
+
+Eigen 3.4.90
+  https://eigen.tuxfamily.org
+  License: MPL-2.0, see COPYING.MPL2 in its source tree; a few files are
+  BSD-3-Clause (COPYING.BSD) or LGPL-2.1 (COPYING.LGPL), see COPYING.README
+  Not included in this repository: the dependency build (tools/dependencies)
+  installs it from upstream commit 1d8b82b0740839c0de7f1242a3585e3390ff5f33.
+  Used by: giga_edge/modules/features (asr_features), compiled there with
+  EIGEN_MPL2_ONLY, so the LGPL-2.1 files are never compiled; the same Eigen
+  is used by the onnxruntime backend (also built with EIGEN_MPL2_ONLY) and
+  the tflite backend
+
+
+Catch2 2.13.10 (tests only)
+  https://github.com/catchorg/Catch2
+  Copyright (c) 2022 Two Blue Cubes Ltd. All rights reserved.
+  License: BSL-1.0, see LICENSE.txt in its source tree
+  contrib/Catch.cmake and contrib/CatchAddTests.cmake come from CMake:
+  Copyright 2000-2020 Kitware, Inc. and Contributors, BSD-3-Clause,
+  see contrib/Copyright.txt (added by tools/dependencies/patches/catch2/0001-*)
+  Not included in this repository: the dependency build (tools/dependencies)
+  builds it from upstream commit 182c910b4b63ff587a3440e08f84f70497e49a81.
+
+
+yaml-cpp 0.6.3 (master a6bbe0e5)
+  https://github.com/jbeder/yaml-cpp
+  Copyright (c) 2008-2015 Jesse Beder.
+  License: MIT, see LICENSE in its source tree
+  Not included in this repository: the dependency build (tools/dependencies)
+  builds it from upstream commit a6bbe0e50ac4074f0b9b44188c28cf00caf1a723.
+  Used by: giga_edge (configuration parsing)

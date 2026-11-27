@@ -1,0 +1,75 @@
+# Abbreviations of words. Tab-separated columns:
+#   1. the abbreviation as written, in lower case; spaces in it may be left out in the text ("т. е." is "т.е." too);
+#   2. its reading with stress marks, or "noun:<nominative>" - a noun of nouns.tsv declined after a preposition
+#      ("в г. Москва" -> "в г+ороде москв+а");
+#   3. optional, when it applies: "number" - before a number ("д. 5"); "name" - before a capitalized word or a quote,
+#      or after a capitalized word ("г. Москва", "Невский пр."); "before-name" - always, and a name usually follows it
+#      ("ул. Ленина"); "address" - after "д." in the same sentence ("д. 7, стр. 2"). The first line that applies wins.
+# The dot of an abbreviation before a capitalized word ends the sentence too ("и т. д. Потом"), unless a name follows
+# it as usual ("name", "before-name").
+т. е.	то +есть
+т. к.	так как
+т. н.	так назыв+аемый
+т. д.	так д+алее
+т. п.	том+у под+обное
+и т. д.	и так д+алее
+и т. п.	и том+у под+обное
+и др.	и друг+ие
+и пр.	и пр+очие
+в т. ч.	в том числ+е
+напр.	напр+имер
+см.	смотр+и	before-name
+им.	+имени	before-name
+ок.	+около	number
+зав.	noun:заведующий	before-name
+проф.	noun:профессор	before-name
+д-р	noun:доктор
+акад.	noun:академик	before-name
+г.	noun:город	name
+ул.	noun:улица	before-name
+д.	noun:дом	number
+кв.	noun:квартира	number
+стр.	noun:строение	address
+стр.	noun:страница	number
+оф.	noun:офис	number
+корп.	noun:корпус	number
+пос.	noun:посёлок	before-name
+пер.	noun:переулок	before-name
+пр.	noun:проспект	name
+пр-т	noun:проспект	before-name
+просп.	noun:проспект	before-name
+пл.	noun:площадь	before-name
+б-р	noun:бульвар	before-name
+наб.	noun:набережная	before-name
+обл.	noun:область
+р-н	noun:район	before-name
+м.	м+етро	name
+пн	noun:понедельник
+вт	noun:вторник
+ср	noun:среда
+чт	noun:четверг
+пт	noun:пятница
+сб	noun:суббота
+вс	noun:воскресенье
+feat.	фит	before-name
+ft.	фит	before-name
+vs.	в+ерсус	before-name
+пн.	noun:понедельник
+вт.	noun:вторник
+ср.	noun:среда
+чт.	noun:четверг
+пт.	noun:пятница
+сб.	noun:суббота
+вс.	noun:воскресенье
+т. обр.	так+им +образом
+до н. э.	до н+ашей +эры
+н. э.	н+ашей +эры
+рис.	noun:рисунок	number
+табл.	noun:таблица	number
+гл.	noun:глава	number
+п.	noun:пункт	number
+с.	noun:страница	number
+ч.	noun:часть	number
+тел.	noun:телефон
+ст.	noun:статья	number
+т.	noun:том	number

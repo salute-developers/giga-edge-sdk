@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="310" viewBox="0 0 760 310" role="img" aria-labelledby="title">
+  <title id="title">A submodel is a slot in the graph; its versions are interchangeable subgraphs, one of them processes each tick</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#59636e"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#0969da"/>
+    </marker>
+    <marker id="al" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#afb8c1"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:13px;fill:#1f2328}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .b{font-weight:600}
+    .note{font-size:12px;fill:#59636e}
+    .small{font-size:11px}
+    .mid{text-anchor:middle}
+    .end{text-anchor:end}
+    .bg{fill:#fff;stroke:#d0d7de}
+    .node{fill:#ddf4ff;stroke:#0969da;stroke-width:1.5}
+    .slot{fill:#fff;stroke:#0969da;stroke-width:1.5;stroke-dasharray:5 4}
+    .card{fill:#f6f8fa;stroke:#0969da;stroke-width:1.5}
+    .idle{fill:#f6f8fa;stroke:#afb8c1}
+    .inode{fill:#fff;stroke:#afb8c1}
+    .edge{fill:none;stroke:#59636e;stroke-width:1.5;marker-end:url(#a)}
+    .active{fill:none;stroke:#0969da;stroke-width:1.5;marker-end:url(#ab)}
+    .wait{fill:none;stroke:#afb8c1;stroke-width:1.5;stroke-dasharray:5 4;marker-end:url(#al)}
+    .ledge{fill:none;stroke:#afb8c1;stroke-width:1.2;marker-end:url(#al)}
+    .tagon{fill:#0969da}
+    .tagoff{fill:#fff;stroke:#afb8c1}
+    .white{fill:#fff}
+    .muted{fill:#8c959f}
+    .blue{fill:#0969da}
+  </style>
+  <rect class="bg" x=".5" y=".5" width="759" height="309" rx="12"/>
+
+  <rect class="node" x="40" y="46" width="110" height="44" rx="8"/>
+  <text class="mono b mid" x="95" y="72.500">node a</text>
+  <path class="edge" d="M150 68H268"/>
+  <text class="mono mid" x="209" y="60" style="font-size:12px">input</text>
+
+  <rect class="slot" x="270" y="36" width="220" height="64" rx="10"/>
+  <text class="mono b mid" x="380" y="63">spotter</text>
+  <text class="note small mid" x="380" y="82">submodel: inputs and outputs only</text>
+
+  <path class="edge" d="M490 68H608"/>
+  <text class="mono mid" x="549" y="60" style="font-size:12px">output</text>
+  <rect class="node" x="610" y="46" width="110" height="44" rx="8"/>
+  <text class="mono b mid" x="665" y="72.500">node b</text>
+
+  <path class="active" d="M360 100C360 128 260 122 260 152"/>
+  <text class="note end blue" x="292" y="126">each tick goes to the active version</text>
+  <path class="wait" d="M400 100C400 128 500 122 500 152"/>
+  <text class="note" x="468" y="126">the other versions wait</text>
+
+  <rect class="card" x="150" y="154" width="220" height="104" rx="10"/>
+  <text class="mono b" x="166" y="178">v1</text>
+  <rect class="tagon" x="300" y="164" width="58" height="20" rx="10"/>
+  <text class="small mid white" x="329" y="178">active</text>
+  <rect class="node" x="168" y="204" width="50" height="30" rx="6"/>
+  <path class="edge" d="M218 219H233"/>
+  <rect class="node" x="235" y="204" width="50" height="30" rx="6"/>
+  <path class="edge" d="M285 219H300"/>
+  <rect class="node" x="302" y="204" width="50" height="30" rx="6"/>
+
+  <rect class="idle" x="390" y="154" width="220" height="104" rx="10"/>
+  <text class="mono b muted" x="406" y="178">v2</text>
+  <rect class="tagoff" x="540" y="164" width="58" height="20" rx="10"/>
+  <text class="small mid muted" x="569" y="178">loaded</text>
+  <rect class="inode" x="420" y="204" width="64" height="30" rx="6"/>
+  <path class="ledge" d="M484 219H514"/>
+  <rect class="inode" x="516" y="204" width="64" height="30" rx="6"/>
+
+  <text class="note mid" x="380" y="290">Versions are added, switched and removed at run time, without recreating the model.</text>
+</svg>

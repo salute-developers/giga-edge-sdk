@@ -1,0 +1,24 @@
+tensorflow/lite: compile options of xnnpack-delegate only when it exists.
+
+In TF 2.20 the end of tensorflow/lite/CMakeLists.txt calls target_compile_options(xnnpack-delegate ...)
+unconditionally, while the target exists only with TFLITE_ENABLE_XNNPACK: with XNNPACK=OFF the configuration
+fails with "Cannot specify compile options for target "xnnpack-delegate"".
+
+diff --git a/tensorflow/lite/CMakeLists.txt b/tensorflow/lite/CMakeLists.txt
+index 3198ec61..872561e3 100644
+--- a/tensorflow/lite/CMakeLists.txt
++++ b/tensorflow/lite/CMakeLists.txt
+@@ -838,7 +838,9 @@ target_compile_options(_pywrap_tensorflow_interpreter_wrapper
+   PRIVATE ${TFLITE_TARGET_PRIVATE_OPTIONS}
+ )
+ 
+-target_compile_options(xnnpack-delegate
+-  PUBLIC ${TFLITE_TARGET_PUBLIC_OPTIONS}
+-  PRIVATE ${TFLITE_TARGET_PRIVATE_OPTIONS}
+-)
++if(TARGET xnnpack-delegate)
++  target_compile_options(xnnpack-delegate
++    PUBLIC ${TFLITE_TARGET_PUBLIC_OPTIONS}
++    PRIVATE ${TFLITE_TARGET_PRIVATE_OPTIONS}
++  )
++endif()
